@@ -403,6 +403,22 @@ public sealed class GelatoManager(
 
         var providerIds = video.ProviderIds;
         providerIds.TryAdd("Stremio", uri.ExternalId);
+        var streamLookupProviderIds = new Dictionary<string, string>(
+            StringComparer.OrdinalIgnoreCase
+        );
+        if (!string.IsNullOrWhiteSpace(uri.ExternalId))
+        {
+            streamLookupProviderIds["Stremio"] = uri.ExternalId;
+        }
+        else
+        {
+            // Safety fallback: should not happen since uri.ExternalId was just built,
+            // but keep previous behavior if identity is unexpectedly missing.
+            foreach (var kv in providerIds)
+            {
+                streamLookupProviderIds[kv.Key] = kv.Value;
+            }
+        }
 
         var cfg = GelatoPlugin.Instance!.GetConfig(userId);
         var stremio = cfg.Stremio;
@@ -434,7 +450,7 @@ public sealed class GelatoManager(
         var query = new InternalItemsQuery
         {
             IncludeItemTypes = [isEpisode ? BaseItemKind.Episode : BaseItemKind.Movie],
-            HasAnyProviderId = providerIds,
+            HasAnyProviderId = streamLookupProviderIds,
             Recursive = true,
             IsDeadPerson = true,
             //  IsVirtualItem = true,
@@ -570,10 +586,13 @@ public sealed class GelatoManager(
             _item.SetGelatoData("userIds", users);
         }
 
+        // Persist userId detaches even when hard deletion is disabled/commented out.
+        // This keeps stale rows from being returned for the current user.
+        repo.SaveItems(stale, ct);
+
         var toDelete = stale
             .Where(item => item.GelatoData<List<Guid>>("userIds") is { Count: 0 })
             .ToList();
-        var toSave = stale.Except(toDelete).ToList();
 
         try
         {
@@ -590,8 +609,6 @@ public sealed class GelatoManager(
                 );
             }
         }
-
-        repo.SaveItems(toSave, ct);
         upsertedStreams.Add(video);
 
         stopwatch.Stop();
@@ -1033,7 +1050,16 @@ public sealed class GelatoManager(
             item.SetProviderId(MetadataProvider.Imdb, meta.ImdbId);
         }
 
-        var stremioUri = new StremioUri(meta.Type, meta.ImdbId ?? id);
+        // Keep the original catalog identity when available; fallback to IMDb only
+        // when an addon omits a concrete id.
+        var externalId = !string.IsNullOrWhiteSpace(id) ? id : meta.ImdbId;
+        if (string.IsNullOrWhiteSpace(externalId))
+        {
+            _log.LogWarning("IntoBaseItem: missing external id for {Name}", meta.GetName());
+            return null;
+        }
+
+        var stremioUri = new StremioUri(meta.Type, externalId);
         item.SetProviderId("Stremio", stremioUri.ExternalId);
         item.IsVirtualItem = false;
         item.ProductionYear = meta.GetYear();

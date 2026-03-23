@@ -200,16 +200,23 @@ public sealed class MediaSourceManagerDecorator(
                 Tags = [GelatoManager.StreamTag],
                 IndexNumber = episode.IndexNumber,
             };
+
+            var episodeStremioId = item.GetProviderId("Stremio");
+            if (!string.IsNullOrWhiteSpace(episodeStremioId))
+            {
+                // Prevent stale/mis-matched stream rows from unrelated identities
+                // when season/index overlap.
+                query.HasAnyProviderId = new Dictionary<string, string>
+                {
+                    { "Stremio", episodeStremioId },
+                };
+            }
         }
         else
         {
             query = new InternalItemsQuery
             {
                 IncludeItemTypes = [item.GetBaseItemKind()],
-                HasAnyProviderId = new Dictionary<string, string>
-                {
-                    { "Stremio", item.GetProviderId("Stremio") },
-                },
                 Recursive = false,
                 GroupByPresentationUniqueKey = false,
                 GroupBySeriesPresentationUniqueKey = false,
@@ -217,6 +224,15 @@ public sealed class MediaSourceManagerDecorator(
                 IsDeadPerson = true,
                 Tags = [GelatoManager.StreamTag],
             };
+
+            var movieStremioId = item.GetProviderId("Stremio");
+            if (!string.IsNullOrWhiteSpace(movieStremioId))
+            {
+                query.HasAnyProviderId = new Dictionary<string, string>
+                {
+                    { "Stremio", movieStremioId },
+                };
+            }
         }
 
         var gelatoSources = repo.GetItemList(query)
@@ -270,10 +286,32 @@ public sealed class MediaSourceManagerDecorator(
             sources.Add(GetVersionInfo(item, MediaSourceType.Default, ctx, user));
         }
 
+        // If playback started from a specific stream row, keep that stream as the
+        // first/default source so selector choices don't collapse back to index 1.
+        if (item is Video selectedVideo && selectedVideo.IsStream() && sources.Count > 1)
+        {
+            var selectedId = item.Id.ToString("N");
+            var selectedIndex = sources.FindIndex(s =>
+                string.Equals(s.Id, selectedId, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(s.ETag, selectedId, StringComparison.OrdinalIgnoreCase)
+            );
+            if (selectedIndex > 0)
+            {
+                var selectedSource = sources[selectedIndex];
+                sources.RemoveAt(selectedIndex);
+                sources.Insert(0, selectedSource);
+            }
+        }
+
         if (sources.Count > 0)
             sources[0].Type = MediaSourceType.Default;
 
-        sources[0].Id = item.Id.ToString("N");
+        // Preserve legacy expectation for primary-item playback requests where
+        // MediaSourceId is omitted and clients use ItemId as the default source id.
+        if (sources.Count > 0 && item.IsPrimaryVersion())
+        {
+            sources[0].Id = item.Id.ToString("N");
+        }
 
         return sources;
     }
@@ -319,18 +357,39 @@ public sealed class MediaSourceManagerDecorator(
 
         var sources = GetStaticMediaSources(item, enablePathSubstitution, user);
 
-        Guid? mediaSourceId =
-            ctx?.Items.TryGetValue("MediaSourceId", out var idObj) == true
-            && idObj is string idStr
-            && Guid.TryParse(idStr, out var fromCtx)
-                ? fromCtx
-                : (
-                    item.IsPrimaryVersion()
-                    && sources.Count > 0
-                    && Guid.TryParse(sources[0].Id, out var fromSource)
-                        ? fromSource
-                        : null
-                );
+        string? mediaSourceId =
+            ctx?.Items.TryGetValue("MediaSourceId", out var idObj) == true && idObj is string idStr
+                ? idStr
+                : null;
+
+        // Some clients pass MediaSourceId in querystring but not HttpContext.Items.
+        if (
+            string.IsNullOrWhiteSpace(mediaSourceId)
+            && ctx?.Request.Query.TryGetValue("MediaSourceId", out var qMediaSourceId) == true
+        )
+        {
+            mediaSourceId = qMediaSourceId.ToString();
+        }
+        if (
+            string.IsNullOrWhiteSpace(mediaSourceId)
+            && ctx?.Request.Query.TryGetValue("mediaSourceId", out var qMediaSourceIdLower) == true
+        )
+        {
+            mediaSourceId = qMediaSourceIdLower.ToString();
+        }
+
+        // Some clients open playback from a specific stream row without sending
+        // MediaSourceId. In that case, pin selection to the clicked stream item id
+        // instead of falling back to index 0 (often the 4K/default row).
+        if (string.IsNullOrWhiteSpace(mediaSourceId) && item is Video streamItem && streamItem.IsStream())
+        {
+            mediaSourceId = item.Id.ToString("N");
+        }
+
+        if (string.IsNullOrWhiteSpace(mediaSourceId) && item.IsPrimaryVersion() && sources.Count > 0)
+        {
+            mediaSourceId = sources[0].Id;
+        }
 
         _log.LogDebug(
             "GetPlaybackMediaSources {ItemId} mediaSourceId={MediaSourceId}",
@@ -340,7 +399,15 @@ public sealed class MediaSourceManagerDecorator(
 
         var selected = SelectByIdOrFirst(sources, mediaSourceId);
         if (selected is null)
+        {
+            if (item is Video selectedStream && selectedStream.IsStream())
+            {
+                var pinned = GetVersionInfo(item, MediaSourceType.Default, ctx, user);
+                return [pinned];
+            }
+
             return sources;
+        }
 
         var owner = ResolveOwnerFor(selected, item);
         if (owner.IsPrimaryVersion() && owner.Id != item.Id)
@@ -386,15 +453,43 @@ public sealed class MediaSourceManagerDecorator(
 
         return [selected];
 
-        static MediaSourceInfo? SelectByIdOrFirst(IReadOnlyList<MediaSourceInfo> list, Guid? id)
+        static MediaSourceInfo? SelectByIdOrFirst(IReadOnlyList<MediaSourceInfo> list, string? id)
         {
-            if (!id.HasValue)
+            if (string.IsNullOrWhiteSpace(id))
                 return list.FirstOrDefault();
 
-            var target = id.Value;
+            var target = id.Trim();
+
+            // Prefer exact id match first; this keeps behavior stable even if clients
+            // send non-GUID source ids.
+            var exact = list.FirstOrDefault(s =>
+                (
+                    !string.IsNullOrWhiteSpace(s.Id)
+                    && string.Equals(s.Id, target, StringComparison.OrdinalIgnoreCase)
+                )
+                || (
+                    !string.IsNullOrWhiteSpace(s.ETag)
+                    && string.Equals(s.ETag, target, StringComparison.OrdinalIgnoreCase)
+                )
+            );
+            if (exact is not null)
+                return exact;
+
+            // Fallback to GUID equivalence for "N" vs dashed id formats.
+            if (!Guid.TryParse(target, out var targetGuid))
+                return list.FirstOrDefault();
 
             return list.FirstOrDefault(s =>
-                    !string.IsNullOrEmpty(s.Id) && Guid.TryParse(s.Id, out var g) && g == target
+                    (
+                        !string.IsNullOrWhiteSpace(s.Id)
+                        && Guid.TryParse(s.Id, out var g)
+                        && g == targetGuid
+                    )
+                    || (
+                        !string.IsNullOrWhiteSpace(s.ETag)
+                        && Guid.TryParse(s.ETag, out var eg)
+                        && eg == targetGuid
+                    )
                 ) ?? list.FirstOrDefault();
         }
 

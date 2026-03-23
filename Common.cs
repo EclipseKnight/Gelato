@@ -49,33 +49,64 @@ public sealed class StremioUri
         switch (kind)
         {
             case BaseItemKind.Movie:
-            {
-                var imdb = item.GetProviderId(MetadataProvider.Imdb);
-                return string.IsNullOrWhiteSpace(imdb)
-                    ? uri
-                    : new StremioUri(StremioMediaType.Movie, imdb);
-            }
+                {
+                    var imdb = item.GetProviderId(MetadataProvider.Imdb);
+                    // Prefer explicit Stremio identity when present so distinct catalog
+                    // entries don't collapse into one IMDb identity.
+                    return uri
+                        ?? (
+                            string.IsNullOrWhiteSpace(imdb)
+                                ? null
+                                : new StremioUri(StremioMediaType.Movie, imdb)
+                        );
+                }
             case BaseItemKind.Series:
-            {
-                var imdb = item.GetProviderId(MetadataProvider.Imdb);
-                return string.IsNullOrWhiteSpace(imdb)
-                    ? uri
-                    : new StremioUri(StremioMediaType.Series, imdb);
-            }
+                {
+                    var imdb = item.GetProviderId(MetadataProvider.Imdb);
+                    // Prefer explicit Stremio identity when present so distinct catalog
+                    // entries don't collapse into one IMDb identity.
+                    return uri
+                        ?? (
+                            string.IsNullOrWhiteSpace(imdb)
+                                ? null
+                                : new StremioUri(StremioMediaType.Series, imdb)
+                        );
+                }
             case BaseItemKind.Episode:
-            {
-                var ep = (Episode)item;
-                var seriesImdb = ep.Series?.GetProviderId(MetadataProvider.Imdb);
-                if (
-                    string.IsNullOrWhiteSpace(seriesImdb)
-                    || ep.ParentIndexNumber is null
-                    || ep.IndexNumber is null
-                )
-                    return uri;
+                {
+                    var ep = (Episode)item;
+                    if (ep.ParentIndexNumber is null || ep.IndexNumber is null)
+                    {
+                        return uri;
+                    }
 
-                var ext = $"{seriesImdb}:{ep.ParentIndexNumber}:{ep.IndexNumber}";
-                return new StremioUri(StremioMediaType.Series, ext);
-            }
+                    // Prefer the episode's own Stremio identity when available.
+                    // This preserves catalog-specific ids and avoids collapsing
+                    // distinct titles that may share a display name.
+                    if (uri is not null)
+                    {
+                        var suffix = $":{ep.ParentIndexNumber}:{ep.IndexNumber}";
+                        var ext = uri.ExternalId.EndsWith(
+                            suffix,
+                            StringComparison.OrdinalIgnoreCase
+                        )
+                            ? uri.ExternalId
+                            : $"{uri.ExternalId}{suffix}";
+
+                        return new StremioUri(StremioMediaType.Series, ext);
+                    }
+
+                    var seriesImdb = ep.Series?.GetProviderId(MetadataProvider.Imdb);
+                    if (string.IsNullOrWhiteSpace(seriesImdb))
+                    {
+                        return null;
+                    }
+
+                    return new StremioUri(
+                        StremioMediaType.Series,
+                        $"{seriesImdb}:{ep.ParentIndexNumber}:{ep.IndexNumber}"
+                    );
+                }
         }
 
         return null;
