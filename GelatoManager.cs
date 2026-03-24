@@ -461,6 +461,24 @@ public sealed class GelatoManager(
             .Where(v => v.IsStream())
             .ToList();
 
+        if (isEpisode && video is Episode targetEpisode)
+        {
+            var beforeCount = existingStreamItems.Count;
+            existingStreamItems = existingStreamItems
+                .Where(v => MatchesEpisodeContext(v, targetEpisode))
+                .ToList();
+
+            var removed = beforeCount - existingStreamItems.Count;
+            if (removed > 0)
+            {
+                _log.LogWarning(
+                    "SyncStreams: filtered {Count} mismatched episode stream rows for item {ItemId}",
+                    removed,
+                    video.Id
+                );
+            }
+        }
+
         // Match stream rows by persisted Gelato guid, not by volatile playback URL/path.
         var existingByGuid = new Dictionary<Guid, Video>();
         foreach (var existingItem in existingStreamItems)
@@ -501,7 +519,26 @@ public sealed class GelatoManager(
                     );
 
             var streamGuid = s.GetGuid();
-            var isNewStreamItem = !existingByGuid.TryGetValue(streamGuid, out var streamItem);
+            existingByGuid.TryGetValue(streamGuid, out var streamItem);
+            var isNewStreamItem = streamItem is null;
+
+            if (
+                !isNewStreamItem
+                && isEpisode
+                && video is Episode episodeContext
+                && streamItem is not null
+                && !MatchesEpisodeContext(streamItem, episodeContext)
+            )
+            {
+                _log.LogWarning(
+                    "SyncStreams: guid-matched row failed episode context check, creating new row. guid={Guid} itemId={ItemId} existingStreamId={ExistingStreamId}",
+                    streamGuid,
+                    video.Id,
+                    streamItem.Id
+                );
+                streamItem = null;
+                isNewStreamItem = true;
+            }
 
             if (isNewStreamItem)
             {
@@ -618,6 +655,54 @@ public sealed class GelatoManager(
         );
 
         return acceptable.Count;
+    }
+
+    private static bool MatchesEpisodeContext(Video streamRow, Episode targetEpisode)
+    {
+        if (streamRow is not Episode streamEpisode)
+        {
+            return false;
+        }
+
+        if (streamEpisode.IndexNumber != targetEpisode.IndexNumber)
+        {
+            return false;
+        }
+
+        if (streamEpisode.ParentIndexNumber != targetEpisode.ParentIndexNumber)
+        {
+            return false;
+        }
+
+        if (
+            streamEpisode.SeasonId != Guid.Empty
+            && targetEpisode.SeasonId != Guid.Empty
+            && streamEpisode.SeasonId != targetEpisode.SeasonId
+        )
+        {
+            return false;
+        }
+
+        if (
+            streamEpisode.SeriesId != Guid.Empty
+            && targetEpisode.SeriesId != Guid.Empty
+            && streamEpisode.SeriesId != targetEpisode.SeriesId
+        )
+        {
+            return false;
+        }
+
+        // Conservative guard: only enforce year when both sides provide one.
+        if (
+            streamEpisode.ProductionYear is int streamYear
+            && targetEpisode.ProductionYear is int targetYear
+            && streamYear != targetYear
+        )
+        {
+            return false;
+        }
+
+        return true;
     }
 
     /// <summary>

@@ -235,7 +235,8 @@ public sealed class MediaSourceManagerDecorator(
             }
         }
 
-        var gelatoSources = repo.GetItemList(query)
+        var episodeContext = item as Episode;
+        var gelatoStreamItems = repo.GetItemList(query)
             .OfType<Video>()
             .Where(x =>
                 x.IsGelato()
@@ -244,6 +245,27 @@ public sealed class MediaSourceManagerDecorator(
                     || (x.GelatoData<List<Guid>>("userIds")?.Contains(userId) ?? false)
                 )
             )
+            .ToList();
+
+        if (episodeContext is not null)
+        {
+            var beforeCount = gelatoStreamItems.Count;
+            gelatoStreamItems = gelatoStreamItems
+                .Where(x => MatchesEpisodeContext(x, episodeContext))
+                .ToList();
+
+            var removed = beforeCount - gelatoStreamItems.Count;
+            if (removed > 0)
+            {
+                _log.LogWarning(
+                    "GetStaticMediaSources: filtered {Count} mismatched episode stream rows for item {ItemId}",
+                    removed,
+                    item.Id
+                );
+            }
+        }
+
+        var gelatoSources = gelatoStreamItems
             .OrderBy(x => x.GelatoData<int?>("index") ?? int.MaxValue)
             .Select(s =>
             {
@@ -499,6 +521,54 @@ public sealed class MediaSourceManagerDecorator(
 
         BaseItem ResolveOwnerFor(MediaSourceInfo s, BaseItem fallback) =>
             Guid.TryParse(s.ETag, out var g) ? libraryManager.GetItemById(g) ?? fallback : fallback;
+    }
+
+    private static bool MatchesEpisodeContext(Video streamRow, Episode targetEpisode)
+    {
+        if (streamRow is not Episode streamEpisode)
+        {
+            return false;
+        }
+
+        if (streamEpisode.IndexNumber != targetEpisode.IndexNumber)
+        {
+            return false;
+        }
+
+        if (streamEpisode.ParentIndexNumber != targetEpisode.ParentIndexNumber)
+        {
+            return false;
+        }
+
+        if (
+            streamEpisode.SeasonId != Guid.Empty
+            && targetEpisode.SeasonId != Guid.Empty
+            && streamEpisode.SeasonId != targetEpisode.SeasonId
+        )
+        {
+            return false;
+        }
+
+        if (
+            streamEpisode.SeriesId != Guid.Empty
+            && targetEpisode.SeriesId != Guid.Empty
+            && streamEpisode.SeriesId != targetEpisode.SeriesId
+        )
+        {
+            return false;
+        }
+
+        // Conservative guard: only enforce year when both sides provide one.
+        if (
+            streamEpisode.ProductionYear is int streamYear
+            && targetEpisode.ProductionYear is int targetYear
+            && streamYear != targetYear
+        )
+        {
+            return false;
+        }
+
+        return true;
     }
 
     public Task<MediaSourceInfo> GetMediaSource(
