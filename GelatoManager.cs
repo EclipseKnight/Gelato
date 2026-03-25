@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using System.Text.RegularExpressions;
 using Gelato.Config;
 using Gelato.Decorators;
 using Jellyfin.Data.Enums;
@@ -30,7 +29,6 @@ public sealed class GelatoManager(
 )
 {
     public const string StreamTag = "gelato-stream";
-    private static readonly Regex YearRegex = new(@"\b(19|20)\d{2}\b", RegexOptions.Compiled);
 
     private readonly ILogger<GelatoManager> _log = loggerFactory.CreateLogger<GelatoManager>();
 
@@ -448,25 +446,6 @@ public sealed class GelatoManager(
             .Where(s => s is not null)
             .ToList();
 
-        if (isEpisode && video is Episode episodeWithYear && episodeWithYear.ProductionYear is int expectedYear)
-        {
-            var before = acceptable.Count;
-            acceptable = acceptable
-                .Where(s => !HasConflictingYearHint(s, expectedYear))
-                .ToList();
-
-            var removed = before - acceptable.Count;
-            if (removed > 0)
-            {
-                _log.LogWarning(
-                    "SyncStreams: filtered {Count} candidate streams by year hint for item {ItemId} expectedYear={Year}",
-                    removed,
-                    video.Id,
-                    expectedYear
-                );
-            }
-        }
-
         // Get existing streams
         var query = new InternalItemsQuery
         {
@@ -597,7 +576,6 @@ public sealed class GelatoManager(
             streamItem.LinkedAlternateVersions = [];
             streamItem.SetPrimaryVersionId(null);
             streamItem.PremiereDate = video.PremiereDate;
-            streamItem.ProductionYear = video.ProductionYear;
             streamItem.Path = path;
             streamItem.IsVirtualItem = false;
             streamItem.SetParent(parent);
@@ -725,40 +703,6 @@ public sealed class GelatoManager(
         }
 
         return true;
-    }
-
-    private static bool HasConflictingYearHint(StremioStream stream, int expectedYear)
-    {
-        var text = string.Join(
-            " ",
-            new[]
-            {
-                stream.Title,
-                stream.Name,
-                stream.Description,
-                stream.BehaviorHints?.Filename,
-            }.Where(v => !string.IsNullOrWhiteSpace(v))
-        );
-
-        if (string.IsNullOrWhiteSpace(text))
-        {
-            return false;
-        }
-
-        var years = YearRegex
-            .Matches(text)
-            .Select(m => int.TryParse(m.Value, out var y) ? y : (int?)null)
-            .Where(y => y.HasValue)
-            .Select(y => y!.Value)
-            .Distinct()
-            .ToList();
-
-        if (years.Count == 0)
-        {
-            return false;
-        }
-
-        return !years.Contains(expectedYear);
     }
 
     /// <summary>

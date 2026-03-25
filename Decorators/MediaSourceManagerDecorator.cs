@@ -1,6 +1,5 @@
 using System.Globalization;
 using System.IO;
-using System.Text.RegularExpressions;
 using Gelato.Providers;
 using Gelato.Services;
 using Jellyfin.Data;
@@ -45,8 +44,6 @@ public sealed class MediaSourceManagerDecorator(
     IEnumerable<ICustomMetadataProvider<Video>> videoProbeProviders
 ) : IMediaSourceManager
 {
-    private static readonly Regex YearRegex = new(@"\b(19|20)\d{2}\b", RegexOptions.Compiled);
-
     private readonly IMediaSourceManager _inner =
         inner ?? throw new ArgumentNullException(nameof(inner));
     private readonly ILogger<MediaSourceManagerDecorator> _log =
@@ -571,49 +568,7 @@ public sealed class MediaSourceManagerDecorator(
             return false;
         }
 
-        if (
-            targetEpisode.ProductionYear is int expectedYear
-            && HasConflictingYearHint(streamRow, expectedYear)
-        )
-        {
-            return false;
-        }
-
         return true;
-    }
-
-    private static bool HasConflictingYearHint(Video streamRow, int expectedYear)
-    {
-        var text = string.Join(
-            " ",
-            new[]
-            {
-                streamRow.GelatoData<string>("filename"),
-                streamRow.GelatoData<string>("name"),
-                streamRow.GelatoData<string>("description"),
-                streamRow.Name,
-            }.Where(v => !string.IsNullOrWhiteSpace(v))
-        );
-
-        if (string.IsNullOrWhiteSpace(text))
-        {
-            return false;
-        }
-
-        var years = YearRegex
-            .Matches(text)
-            .Select(m => int.TryParse(m.Value, out var y) ? y : (int?)null)
-            .Where(y => y.HasValue)
-            .Select(y => y!.Value)
-            .Distinct()
-            .ToList();
-
-        if (years.Count == 0)
-        {
-            return false;
-        }
-
-        return !years.Contains(expectedYear);
     }
 
     public Task<MediaSourceInfo> GetMediaSource(
