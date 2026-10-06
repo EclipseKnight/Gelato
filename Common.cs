@@ -382,6 +382,20 @@ public static class ActionContextExtensions
         "GetItemsByUserIdLegacy",
     };
 
+    // The insertable actions that only read an item, as a details page does: no playback, probe,
+    // download or subtitle. Known stream rows may answer these while a sync runs in the background
+    // (RefreshStreamsInBackground); every other action waits for the sync. A list is insertable
+    // only when it asks for one item.
+    private static readonly HashSet<string> ItemReadActionNames = new(
+        StringComparer.OrdinalIgnoreCase
+    )
+    {
+        "GetItem",
+        "GetItemLegacy",
+        "GetItems",
+        "GetItemsByUserIdLegacy",
+    };
+
     /// <summary>
     /// Reads from the request the accessor carries, or returns <paramref name="none"/> when there
     /// is no request or it has already finished.
@@ -468,6 +482,9 @@ public static class ActionContextExtensions
 
     public static bool IsInsertableAction(this ActionExecutingContext ctx) =>
         ctx.HttpContext.IsInsertableAction();
+
+    public static bool IsItemReadAction(this HttpContext ctx) =>
+        ctx.GetActionName() is { } actionName && ItemReadActionNames.Contains(actionName);
 
     /// <summary>
     /// Whether the request may be answered from the library item a search result is, without

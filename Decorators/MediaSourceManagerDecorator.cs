@@ -147,68 +147,49 @@ public sealed class MediaSourceManagerDecorator(
                 uri?.ToString()
             );
         }
-        else if (uri is not null && !isStreamRow && !manager.HasStreamSync(cacheKey, syncItemId))
+        else if (uri is not null && !isStreamRow)
         {
-            // Bug in web UI that calls the detail page twice. So that's why there's a lock.
-            _lock
-                .RunSingleFlightAsync(
-                    item.Id,
-                    async ct =>
-                    {
-                        _log.LogDebug("GetStaticMediaSources refreshing streams for {Id}", item.Id);
+            var syncAction = StreamSyncPolicy.Decide(
+                manager.GetStreamSync(cacheKey, syncItemId),
+                cfg.RefreshStreamsInBackground,
+                _http.ReadRequest(ctx => ctx.IsItemReadAction(), false),
+                manager.WasStreamSyncReset(syncItemId),
+                () => CountUserStreamRows(video, userId)
+            );
 
-                        // Prewarm subtitle cache in the background if Gelato Subtitles
-                        // is enabled for this library.
-                        var libraryOptions = _libraryManager.GetLibraryOptions(item);
-                        var subtitlePrewarmEnabled =
-                            libraryOptions.SubtitleDownloadLanguages?.Length > 0
-                            && !libraryOptions.DisabledSubtitleFetchers.Contains(
-                                "Gelato Subtitles",
-                                StringComparer.OrdinalIgnoreCase
-                            );
+            // Each sync job runs once per movie/episode at a time: the web UI asks for the detail
+            // page twice, and a background refresh may still be running when playback asks.
+            Func<CancellationToken, Task> sync = ct =>
+                SyncStreamsAsync(manager, item, uri, userId, cacheKey, ct);
 
-                        if (subtitlePrewarmEnabled)
-                        {
-                            _ = Task.Run(async () =>
-                            {
-                                try
-                                {
-                                    await _subtitleProvider
-                                        .Value.GetSubtitlesAsync(
-                                            uri.ExternalId,
-                                            uri.MediaType,
-                                            CancellationToken.None
-                                        )
-                                        .ConfigureAwait(false);
-                                }
-                                catch (Exception ex)
-                                {
-                                    _log.LogWarning(ex, "Subtitle prewarm failed for {Uri}", uri);
-                                }
-                            });
-                        }
+            switch (syncAction)
+            {
+                case StreamSyncAction.UseRememberedNoStreams:
+                    // Counted by log watchers: one line is one AIOStreams request saved.
+                    _log.LogInformation(
+                        "SyncStreams skipped, no streams remembered GelatoId={GelatoId} userId={UserId}",
+                        uri.ExternalId,
+                        userId
+                    );
+                    break;
 
-                        try
-                        {
-                            var count = await manager
-                                .SyncStreams(item, userId, ct)
-                                .ConfigureAwait(false);
-                            if (count > 0)
-                            {
-                                manager.SetStreamSync(cacheKey);
-                            }
-                        }
-                        catch (Exception ex)
-                        {
-                            _log.LogError(ex, "Failed to sync streams for {Id}", item.Id);
-                        }
-                    }
-                )
-                .GetAwaiter()
-                .GetResult();
+                case StreamSyncAction.ServeKnownRowsAndRefresh:
+                    // Counted by log watchers: one line is one call that did not wait for a sync.
+                    _log.LogInformation(
+                        "SyncStreams refreshing in background GelatoId={GelatoId} userId={UserId}",
+                        uri.ExternalId,
+                        userId
+                    );
+                    RunInBackground(item.Id, sync);
+                    break;
 
-            // refresh item
-            libraryManager.GetItemById(item.Id);
+                case StreamSyncAction.SyncNow:
+                    _lock.RunSingleFlightAsync(item.Id, sync).GetAwaiter().GetResult();
+
+                    // refresh item
+                    libraryManager.GetItemById(item.Id);
+                    break;
+            }
         }
 
         var itemId = item.Id.ToString("N", CultureInfo.InvariantCulture);
@@ -353,6 +334,94 @@ public sealed class MediaSourceManagerDecorator(
 
     private static HashSet<string> GetStreamRowIds(IEnumerable<Video> rows) =>
         rows.Select(r => r.Id.ToString("N", CultureInfo.InvariantCulture)).ToHashSet();
+
+    /// <summary>The stream rows of the movie/episode this user has from an earlier sync.</summary>
+    private int CountUserStreamRows(Video? primary, Guid userId) =>
+        GetStreamRows(primary)
+            .Count(r => r.GelatoData<List<Guid>>("userIds")?.Contains(userId) ?? false);
+
+    /// <summary>
+    /// Asks AIOStreams for the movie/episode's streams, saves them as its rows and marks the user's
+    /// sync (<see cref="GelatoManager.SetStreamSync"/>), also when none were found. A failed sync
+    /// is not marked, so the next call tries again.
+    /// </summary>
+    private async Task SyncStreamsAsync(
+        GelatoManager manager,
+        BaseItem item,
+        StremioUri uri,
+        Guid userId,
+        string cacheKey,
+        CancellationToken ct
+    )
+    {
+        _log.LogDebug("GetStaticMediaSources refreshing streams for {Id}", item.Id);
+
+        // Prewarm subtitle cache in the background if Gelato Subtitles
+        // is enabled for this library.
+        var libraryOptions = _libraryManager.GetLibraryOptions(item);
+        var subtitlePrewarmEnabled =
+            libraryOptions.SubtitleDownloadLanguages?.Length > 0
+            && !libraryOptions.DisabledSubtitleFetchers.Contains(
+                "Gelato Subtitles",
+                StringComparer.OrdinalIgnoreCase
+            );
+
+        if (subtitlePrewarmEnabled)
+        {
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await _subtitleProvider
+                        .Value.GetSubtitlesAsync(
+                            uri.ExternalId,
+                            uri.MediaType,
+                            CancellationToken.None
+                        )
+                        .ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    _log.LogWarning(ex, "Subtitle prewarm failed for {Uri}", uri);
+                }
+            });
+        }
+
+        try
+        {
+            var count = await manager.SyncStreams(item, userId, ct).ConfigureAwait(false);
+
+            // A version merged into another movie/episode is not synced (its streams belong to
+            // that one), so its zero says nothing, and its key is the other one's: marking it
+            // would hold back that movie's own sync.
+            if (count > 0 || item is not Video { PrimaryVersionId: not null })
+            {
+                manager.SetStreamSync(cacheKey, count);
+            }
+        }
+        catch (Exception ex)
+        {
+            _log.LogError(ex, "Failed to sync streams for {Id}", item.Id);
+        }
+    }
+
+    /// <summary>
+    /// Starts a stream sync that the request does not wait for. If one is already running for the
+    /// movie/episode, that one is left to finish and no second one starts.
+    /// </summary>
+    private void RunInBackground(Guid itemId, Func<CancellationToken, Task> sync)
+    {
+        // Its own token, never the request's: the request ends as soon as it has answered (and
+        // Jellyfin cancels the token when the client hangs up), and a sync stopped halfway leaves
+        // rows saved but not linked. Nothing cancels it; the HTTP client's timeout bounds the
+        // AIOStreams request, like the waiting sync's.
+        // Without the request's context too: the sync outlives the request, and it should run
+        // the same whether the request has ended or not, as it does from a scheduled task.
+        using (ExecutionContext.SuppressFlow())
+        {
+            _ = Task.Run(() => _lock.RunSingleFlightAsync(itemId, sync, CancellationToken.None));
+        }
+    }
 
     /// <summary>
     /// Puts the stream the user is part way through first, so clients preselect it. The resume

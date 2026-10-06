@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Globalization;
 using Gelato.Config;
 using Gelato.Decorators;
+using Gelato.Services;
 using Jellyfin.Data.Enums;
 using Jellyfin.Database.Implementations.Entities;
 using MediaBrowser.Common.Configuration;
@@ -66,40 +67,33 @@ public sealed class GelatoManager(
         return memoryCache.Get<List<StremioSubtitle>>($"subs:{guid}");
     }
 
-    public void SetStreamSync(string guid)
-    {
-        memoryCache.Set(
-            $"streamsync:{guid}",
-            DateTime.UtcNow,
-            TimeSpan.FromSeconds(GelatoPlugin.Instance!.Configuration.StreamTTL)
-        );
-    }
+    private readonly StreamSyncCache _streamSyncs = new(
+        memoryCache,
+        () => TimeSpan.FromSeconds(GelatoPlugin.Instance!.Configuration.StreamTTL),
+        () => TimeSpan.FromSeconds(GelatoPlugin.Instance!.Configuration.NoStreamsTTL)
+    );
 
     /// <summary>
-    /// Whether the streams behind the key were synced within StreamTTL and the movie/episode was
-    /// not reset since (<see cref="ResetStreamSync"/>).
+    /// Marks the streams behind the key as synced: for StreamTTL when some were found, for
+    /// NoStreamsTTL when none were (see <see cref="StreamSyncCache"/>).
     /// </summary>
-    public bool HasStreamSync(string guid, Guid itemId)
-    {
-        if (!memoryCache.TryGetValue($"streamsync:{guid}", out DateTime syncedAt))
-            return false;
+    public void SetStreamSync(string guid, int streamCount) => _streamSyncs.Set(guid, streamCount);
 
-        return !memoryCache.TryGetValue($"streamsync-reset:{itemId}", out DateTime resetAt)
-            || syncedAt > resetAt;
-    }
+    /// <summary>
+    /// Whether the streams behind the key were synced recently, and whether that sync found any.
+    /// A sync from before the movie/episode was reset (<see cref="ResetStreamSync"/>) is due again.
+    /// </summary>
+    public StreamSyncState GetStreamSync(string guid, Guid itemId) =>
+        _streamSyncs.Get(guid, itemId);
 
     /// <summary>
     /// Makes the next visit of the movie/episode sync its streams again, for every user: after
     /// Jellyfin's split versions cleared the rows' owner and the links, or a merge changed them.
     /// </summary>
-    public void ResetStreamSync(Guid itemId)
-    {
-        memoryCache.Set(
-            $"streamsync-reset:{itemId}",
-            DateTime.UtcNow,
-            TimeSpan.FromSeconds(GelatoPlugin.Instance!.Configuration.StreamTTL)
-        );
-    }
+    public void ResetStreamSync(Guid itemId) => _streamSyncs.Reset(itemId);
+
+    /// <summary>Whether <see cref="ResetStreamSync"/> ran for the movie/episode lately.</summary>
+    public bool WasStreamSyncReset(Guid itemId) => _streamSyncs.WasReset(itemId);
 
     public void SaveStremioMeta(Guid guid, StremioMeta meta)
     {
