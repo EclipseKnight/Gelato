@@ -1115,6 +1115,17 @@ public class StremioSeasonPosters
 /// </summary>
 public sealed class SeasonPostersConverter : JsonConverter<StremioSeasonPosters?>
 {
+    // Utf8JsonReader.Skip() throws on a non-final block, which is always the case when
+    // the payload is read with DeserializeAsync (the network path). TrySkip() works on
+    // the buffered value a converter is given; a false return means truncated JSON.
+    private static void SkipValue(ref Utf8JsonReader r)
+    {
+        if (!r.TrySkip())
+        {
+            throw new JsonException("Truncated seasonPosters value.");
+        }
+    }
+
     public override StremioSeasonPosters? Read(
         ref Utf8JsonReader r,
         Type t,
@@ -1142,7 +1153,7 @@ public sealed class SeasonPostersConverter : JsonConverter<StremioSeasonPosters?
                     )
                         byNumber[n] = url;
                     else
-                        r.Skip();
+                        SkipValue(ref r);
                 }
                 return new StremioSeasonPosters { ByNumber = byNumber };
             case JsonTokenType.StartArray:
@@ -1150,11 +1161,11 @@ public sealed class SeasonPostersConverter : JsonConverter<StremioSeasonPosters?
                 while (r.Read() && r.TokenType != JsonTokenType.EndArray)
                 {
                     ordered.Add(r.TokenType == JsonTokenType.String ? r.GetString() : null);
-                    r.Skip();
+                    SkipValue(ref r);
                 }
                 return new StremioSeasonPosters { Ordered = ordered };
             default:
-                r.Skip();
+                SkipValue(ref r);
                 return null;
         }
     }
@@ -1568,7 +1579,8 @@ public class SafeStringEnumConverter<T> : JsonConverter<T>
             if (reader.TryGetInt32(out var i) && Enum.IsDefined(typeof(T), i))
                 return (T)Enum.ToObject(typeof(T), i);
         }
-        reader.Skip();
+        // TrySkip, not Skip: Skip() throws on the non-final blocks DeserializeAsync reads.
+        reader.TrySkip();
         return Enum.TryParse<T>("Unknown", true, out var fb) ? fb : default;
     }
 
