@@ -185,6 +185,23 @@
               <div class="fieldDescription">Cache duration for external stream URLs.</div>
             </div>
 
+            <div class="inputContainer">
+              <label class="inputLabel inputLabelUnfocused" for="txtNoStreamsTTL">No-streams TTL (seconds):</label>
+              <input is="emby-input" type="number" id="txtNoStreamsTTL" class="emby-input" min="0" />
+              <div class="fieldDescription">How long a title that returned no streams is remembered per user, so it
+                isn't asked for again on every visit. Never longer than Stream TTL. 0 turns it off. Default: 600.</div>
+            </div>
+
+            <div class="checkboxContainer checkboxContainer-withDescription">
+              <label>
+                <input is="emby-checkbox" type="checkbox" id="chkRefreshStreamsInBackground" />
+                <span>Refresh streams in the background</span>
+              </label>
+              <div class="fieldDescription">When Stream TTL has passed and the user already has streams for the title,
+                the details page shows them at once and the new list is fetched in the background. Playback still
+                waits for the new list.</div>
+            </div>
+
             <div class="checkboxContainer checkboxContainer-withDescription">
               <label>
                 <input is="emby-checkbox" type="checkbox" id="chkPreProbe" />
@@ -315,6 +332,8 @@
         const txtSeriesPath = page.querySelector('#txtSeriesPath');
 
         const txtStreamTTL = page.querySelector('#txtStreamTTL');
+        const txtNoStreamsTTL = page.querySelector('#txtNoStreamsTTL');
+        const chkRefreshStreamsInBackground = page.querySelector('#chkRefreshStreamsInBackground');
         const chkEnableMixed = page.querySelector('#chkEnableMixed');
         const chkExtendLocalSeriesTrees = page.querySelector('#chkExtendLocalSeriesTrees');
         const chkDisableSearch = page.querySelector('#chkDisableSearch');
@@ -612,6 +631,8 @@
             if (txtMoviePath) txtMoviePath.value = cfg.MoviePath || "";
             if (txtSeriesPath) txtSeriesPath.value = cfg.SeriesPath || "";
             if (txtStreamTTL) txtStreamTTL.value = cfg.StreamTTL || 3600;
+            if (txtNoStreamsTTL) txtNoStreamsTTL.value = cfg.NoStreamsTTL ?? 600;
+            if (chkRefreshStreamsInBackground) chkRefreshStreamsInBackground.checked = cfg.RefreshStreamsInBackground ?? true;
             if (chkEnableMixed) chkEnableMixed.checked = cfg.EnableMixed ?? true;
             if (chkExtendLocalSeriesTrees) chkExtendLocalSeriesTrees.checked = cfg.ExtendLocalSeriesTrees ?? false;
             if (chkDisableSearch) chkDisableSearch.checked = cfg.DisableSearch || false;
@@ -648,6 +669,10 @@
             
             // Stream TTL
             cfg.StreamTTL = parseInt(txtStreamTTL.value) || 3600;
+            // 0 is a valid value here (off), so only an empty or bad field falls back to the default.
+            const noStreamsTTL = parseInt(txtNoStreamsTTL.value);
+            cfg.NoStreamsTTL = Number.isNaN(noStreamsTTL) || noStreamsTTL < 0 ? 600 : noStreamsTTL;
+            cfg.RefreshStreamsInBackground = chkRefreshStreamsInBackground.checked;
             cfg.EnableMixed = chkEnableMixed.checked;
             cfg.ExtendLocalSeriesTrees = chkExtendLocalSeriesTrees.checked;
 

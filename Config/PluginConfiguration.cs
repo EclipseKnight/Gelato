@@ -11,6 +11,23 @@ public class PluginConfiguration : BasePluginConfiguration
     public string MoviePath { get; set; } = Path.Combine(Path.GetTempPath(), "gelato", "movies");
     public string SeriesPath { get; set; } = Path.Combine(Path.GetTempPath(), "gelato", "series");
     public int StreamTTL { get; set; } = 3600;
+
+    /// <summary>
+    /// Seconds a sync that found no streams is remembered for that user and title, so calls in
+    /// between answer at once instead of asking AIOStreams again (and waiting for its slowest
+    /// addon). Kept short so streams that appear later are found soon. 0 turns it off; it is
+    /// never longer than <see cref="StreamTTL"/>.
+    /// </summary>
+    public int NoStreamsTTL { get; set; } = 600;
+
+    /// <summary>
+    /// When a user's streams for a title are due again (<see cref="StreamTTL"/> passed) and that
+    /// user still has the rows from the last sync, a details read answers with those rows at once
+    /// and the sync runs in the background. Playback calls still wait for the sync, so what is
+    /// played and probed is always the fresh list.
+    /// </summary>
+    public bool RefreshStreamsInBackground { get; set; } = true;
+
     public int CatalogMaxItems { get; set; } = 100;
     public string Url { get; set; } = "";
     public bool EnableMixed { get; set; } = false;
@@ -159,6 +176,8 @@ public class UserConfig
 
             // All other fields from base config
             StreamTTL = baseConfig.StreamTTL,
+            NoStreamsTTL = baseConfig.NoStreamsTTL,
+            RefreshStreamsInBackground = baseConfig.RefreshStreamsInBackground,
             CatalogMaxItems = baseConfig.CatalogMaxItems,
             EnableMixed = baseConfig.EnableMixed,
             ExtendLocalSeriesTrees = baseConfig.ExtendLocalSeriesTrees,
