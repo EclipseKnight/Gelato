@@ -1,7 +1,7 @@
 ---
 name: "Gelato"
 guid: "94EA4E14-8163-4989-96FE-0A2094BC2D6A"
-version: "0.26.20.105"
+version: "0.26.20.106"
 targetAbi: "12.1.0.0"
 framework: "net10.0"
 owner: "lstb1t"
@@ -27,9 +27,12 @@ category: "General"
 # The card in the plugin catalog; Jellyfin downloads it when it reads the repository.
 imageUrl: "https://raw.githubusercontent.com/lostb1t/Gelato/main/banner.png"
 changelog: >
-  Altffour build 0.26.20.105: a stream sync that finds no streams is remembered per user
-  for NoStreamsTTL (default 600 s, 0 = off), so the title isn't asked for again on every call.
-  When StreamTTL has passed and the user still has the title's rows, details reads answer with
-  them at once and the sync runs in the background (RefreshStreamsInBackground, default on);
-  playback calls still wait for the sync, also when they name one version's own id, and a probe
-  is not saved over a row a sync deleted or rewrote meanwhile.
+  Altffour build 0.26.20.106 on upstream main ebfd9f1 (Jellyfin 12.1, native versions):
+  deterministic stream identity (upstream PR #142); JSON converters use TrySkip (fixes
+  seasonPosters/enum parse failures under DeserializeAsync); search-result posters are resized
+  like library images. A stream sync that finds no streams is remembered per user for
+  NoStreamsTTL (default 600 s, 0 = off). When StreamTTL has passed and the user still has the
+  title's rows, details reads answer with them at once and the sync runs in the background
+  (RefreshStreamsInBackground, default on); playback calls still wait for the sync, also when
+  they name one version's own id, play the first remaining version when the sync removed the
+  one asked for, and a probe is not saved over a row or movie a sync deleted or rewrote meanwhile.
