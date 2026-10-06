@@ -228,13 +228,40 @@ public sealed class MediaSourceManagerDecorator(
         var primary = video?.PrimaryVersionId is { } primaryVersionId
             ? _libraryManager.GetItemById(primaryVersionId) as Video
             : video;
+
+        // A sync deleted the row (no user has its stream any more): the one this call waited for
+        // above, or one that ran since the client loaded it. PlaybackInfo also reads the sources
+        // again after its probe, without waiting. The row's source would name an item that is
+        // gone, so a call that plays it answers as the movie would: with the versions left, the
+        // first one first, which is what gets played. Looked up only for such calls on a row.
+        var answerAsMovie = StreamSyncPolicy.AnswersAsMovie(
+            isStreamRow && allowSync,
+            isItemRead,
+            rowExists: !isStreamRow
+                || !allowSync
+                || isItemRead
+                || _libraryManager.GetItemById(item.Id) is not null,
+            movieExists: primary is not null
+        );
+        if (answerAsMovie)
+        {
+            _log.LogInformation(
+                "Stream row {Id} was removed by a stream sync, answering with the versions of {PrimaryId}",
+                item.Id,
+                primary!.Id
+            );
+        }
+
+        // The item whose sources these are: the row asked for, or its movie in its place.
+        var servesRow = isStreamRow && !answerAsMovie;
+        var answering = answerAsMovie ? primary! : item;
         var linkedVersions = primary is null
             ? []
             : _libraryManager.GetLinkedAlternateVersions(primary).ToList();
         if (
             linkedVersions.Count == 0
             && primary is not null
-            && !isStreamRow
+            && !servesRow
             && primary.IsGelatoPlaybackItem()
             && manager.RelinkOwnedRows(primary)
         )
@@ -275,7 +302,7 @@ public sealed class MediaSourceManagerDecorator(
 
                 if (user is not null)
                 {
-                    _inner.SetDefaultAudioAndSubtitleStreamIndices(item, source, user);
+                    _inner.SetDefaultAudioAndSubtitleStreamIndices(answering, source, user);
                 }
 
                 return (Row: row, Source: source);
@@ -291,7 +318,7 @@ public sealed class MediaSourceManagerDecorator(
 
         sources.AddRange(versions.Select(v => v.Source));
 
-        if (isStreamRow)
+        if (servesRow)
         {
             // The requested version goes first: it becomes the Default source.
             var own =
@@ -317,7 +344,7 @@ public sealed class MediaSourceManagerDecorator(
         // failsafe. mediasources cannot be null
         if (sources.Count == 0)
         {
-            sources.Add(GetVersionInfo(item, MediaSourceType.Default, user));
+            sources.Add(GetVersionInfo(answering, MediaSourceType.Default, user));
         }
 
         // A Gelato movie/episode has no media of its own, so its first stream takes its id and the
@@ -335,7 +362,7 @@ public sealed class MediaSourceManagerDecorator(
             first.Id = primaryId;
         }
 
-        if (!isStreamRow && primary is not null && user is not null)
+        if (!servesRow && primary is not null && user is not null)
         {
             MoveResumedVersionFirst(sources, primary, versions, user);
         }
@@ -609,7 +636,8 @@ public sealed class MediaSourceManagerDecorator(
 
         if (NeedsProbe(selected))
         {
-            // Before the probe: a sync deleting the row clears its owner on the way.
+            // Taken before the probe, so a sync that runs during it shows up as a change when the
+            // result is saved (SaveProbedAsync).
             var ownerStamp = ProbeSaveGuard.Stamp(owner);
             var writeKey = StreamWriteKey(owner, item);
             var libraryOptions = _libraryManager.GetLibraryOptions(owner);
