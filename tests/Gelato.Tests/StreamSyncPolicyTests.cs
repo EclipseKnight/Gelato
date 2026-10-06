@@ -194,3 +194,48 @@ public class SyncAndMarkTests
         Assert.Empty(_marks);
     }
 }
+
+/// <summary>
+/// A call that plays a stream row a sync has deleted (typically the sync it just waited for)
+/// answers as the movie would: its first remaining version, not a source whose item is gone.
+/// </summary>
+public class StreamRowGoneTests
+{
+    private static bool AnswersAsMovie(
+        bool isStreamRow = true,
+        bool isItemRead = false,
+        bool rowExists = false,
+        bool movieExists = true
+    ) => StreamSyncPolicy.AnswersAsMovie(isStreamRow, isItemRead, rowExists, movieExists);
+
+    [Fact]
+    public void Playing_a_row_the_sync_deleted_answers_as_its_movie()
+    {
+        Assert.True(AnswersAsMovie());
+    }
+
+    [Fact]
+    public void A_row_the_sync_kept_answers_as_itself()
+    {
+        Assert.False(AnswersAsMovie(rowExists: true));
+    }
+
+    [Fact]
+    public void A_details_read_is_not_affected()
+    {
+        // It only lists the versions; the client gets the 404 for the gone row as before.
+        Assert.False(AnswersAsMovie(isItemRead: true));
+    }
+
+    [Fact]
+    public void Without_its_movie_the_row_answers_as_itself()
+    {
+        Assert.False(AnswersAsMovie(movieExists: false));
+    }
+
+    [Fact]
+    public void A_movie_or_episode_is_never_affected()
+    {
+        Assert.False(AnswersAsMovie(isStreamRow: false));
+    }
+}

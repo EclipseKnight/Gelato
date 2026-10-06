@@ -70,6 +70,22 @@ public static class StreamSyncPolicy
         isStreamRow && !isItemRead && !insideSync;
 
     /// <summary>
+    /// Whether a call on a stream row answers as its movie/episode would: with the versions the
+    /// user has left, first one first. True for a call that plays the row (not a details read)
+    /// when the row is gone, deleted by the sync the call waited for
+    /// (<see cref="WaitsForRunningSync"/>) or by one since the client loaded it. The row's own
+    /// source would name an item that no longer exists, which the player gets a 404 for.
+    /// </summary>
+    /// <param name="rowExists">The row is still in the library.</param>
+    /// <param name="movieExists">The row's movie/episode is there to answer instead.</param>
+    public static bool AnswersAsMovie(
+        bool isStreamRow,
+        bool isItemRead,
+        bool rowExists,
+        bool movieExists
+    ) => isStreamRow && !isItemRead && !rowExists && movieExists;
+
+    /// <summary>
     /// Runs a sync and marks it with the number of streams found, so the next calls within
     /// StreamTTL (or NoStreamsTTL for none) answer without asking again. A sync that throws or is
     /// cancelled is not marked, so the next call tries again; the exception is the caller's.
