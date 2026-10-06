@@ -373,7 +373,8 @@ public sealed class MediaSourceManagerDecorator(
         sources[0].Type = MediaSourceType.Default;
 
         // A page opened or another version picked: the web client loads the version's row as an
-        // item when the dropdown changes, so this is also the pick of a version.
+        // item when the dropdown changes, so this is also the pick of a version. A read marked as
+        // a prefetch (a card hovered or focused) gets its sources but starts no pre-probe.
         if (
             user is not null
             && _http.ReadRequest(
@@ -382,7 +383,12 @@ public sealed class MediaSourceManagerDecorator(
             )
         )
         {
-            SchedulePreProbe(item, sources[0], user);
+            SchedulePreProbe(
+                item,
+                sources[0],
+                user,
+                isPrefetch: _http.ReadRequest(PrefetchHint.IsPrefetch, false)
+            );
         }
 
         return sources;
@@ -1286,7 +1292,7 @@ public sealed class MediaSourceManagerDecorator(
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, Task> _preProbing =
         new();
 
-    private void SchedulePreProbe(BaseItem item, MediaSourceInfo source, User user)
+    private void SchedulePreProbe(BaseItem item, MediaSourceInfo source, User user, bool isPrefetch)
     {
         if (
             !GelatoPlugin.Instance!.GetConfig(user.Id).PreProbe
@@ -1297,6 +1303,18 @@ public sealed class MediaSourceManagerDecorator(
             || PreProbeFailedRecently(PreProbeKey(source))
         )
         {
+            return;
+        }
+
+        // Checked last, so the line is logged only for a pre-probe that would have run. Returning
+        // before the pending one is replaced also leaves a real page open's pre-probe alone.
+        if (isPrefetch)
+        {
+            _log.LogDebug(
+                "Pre-probe of {ItemId} source {SourceId} skipped: the request is a prefetch",
+                item.Id,
+                source.Id
+            );
             return;
         }
 
