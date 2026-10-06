@@ -54,4 +54,42 @@ public static class StreamSyncPolicy
                 StreamSyncAction.ServeKnownRowsAndRefresh,
             _ => StreamSyncAction.SyncNow,
         };
+
+    /// <summary>
+    /// Whether a sync-eligible call on a stream row waits for a sync of the row's movie/episode
+    /// that is already running. It never starts one.
+    /// </summary>
+    /// <remarks>
+    /// Jellyfin 12's web client loads a version as an item, then plays it by the row's own id.
+    /// Playback, stream, download and subtitle calls probe and save that row, and the sync may be
+    /// rewriting or deleting it. A details read only lists the versions, as the movie's own read
+    /// does while a refresh runs. A call made by the sync itself (an event handler of a save it
+    /// makes, say) must never wait: it would wait for itself.
+    /// </remarks>
+    public static bool WaitsForRunningSync(bool isStreamRow, bool isItemRead, bool insideSync) =>
+        isStreamRow && !isItemRead && !insideSync;
+
+    /// <summary>
+    /// Runs a sync and marks it with the number of streams found, so the next calls within
+    /// StreamTTL (or NoStreamsTTL for none) answer without asking again. A sync that throws or is
+    /// cancelled is not marked, so the next call tries again; the exception is the caller's.
+    /// </summary>
+    /// <param name="isMergedVersion">
+    /// The item is a version merged into another movie/episode. Its streams belong to that one, so
+    /// it is never synced and its zero says nothing; and it shares that one's key, so marking it
+    /// would hold back that movie's own sync.
+    /// </param>
+    public static async Task SyncAndMarkAsync(
+        Func<CancellationToken, Task<int>> sync,
+        bool isMergedVersion,
+        Action<int> mark,
+        CancellationToken ct
+    )
+    {
+        var count = await sync(ct).ConfigureAwait(false);
+        if (count > 0 || !isMergedVersion)
+        {
+            mark(count);
+        }
+    }
 }

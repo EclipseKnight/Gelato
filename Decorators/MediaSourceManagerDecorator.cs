@@ -56,6 +56,12 @@ public sealed class MediaSourceManagerDecorator(
     private readonly IHttpContextAccessor _http =
         http ?? throw new ArgumentNullException(nameof(http));
     private readonly KeyLock _lock = new();
+
+    /// <summary>
+    /// Set for the code a stream sync runs, so a call it makes on a stream row (from an event
+    /// handler of one of its saves, say) never waits for that same sync.
+    /// </summary>
+    private static readonly AsyncLocal<bool> InStreamSync = new();
     private readonly IMediaSegmentManager _mediaSegmentManager =
         mediaSegmentManager ?? throw new ArgumentNullException(nameof(mediaSegmentManager));
     private readonly ILibraryManager _libraryManager =
@@ -130,6 +136,7 @@ public sealed class MediaSourceManagerDecorator(
 
         var allowSync =
             _http.ReadRequest(ctx => ctx.IsInsertableAction(), false) && userId != Guid.Empty;
+        var isItemRead = _http.ReadRequest(ctx => ctx.IsItemReadAction(), false);
         var video = item as Video;
         var syncItemId = video?.PrimaryVersionId ?? item.Id;
         // With the creation date: an item deleted and inserted again gets the same id (its path
@@ -149,7 +156,7 @@ public sealed class MediaSourceManagerDecorator(
             var syncAction = StreamSyncPolicy.Decide(
                 manager.GetStreamSync(cacheKey, syncItemId),
                 cfg.RefreshStreamsInBackground,
-                _http.ReadRequest(ctx => ctx.IsItemReadAction(), false),
+                isItemRead,
                 manager.WasStreamSyncReset(syncItemId),
                 () => CountUserStreamRows(video, userId)
             );
@@ -171,13 +178,16 @@ public sealed class MediaSourceManagerDecorator(
                     break;
 
                 case StreamSyncAction.ServeKnownRowsAndRefresh:
+                    var started = RunInBackground(item.Id, sync);
                     // Counted by log watchers: one line is one call that did not wait for a sync.
+                    // Refresh says whether this call started the sync or joined one already
+                    // running, so the count of syncs started can be told apart.
                     _log.LogInformation(
-                        "SyncStreams refreshing in background GelatoId={GelatoId} userId={UserId}",
+                        "SyncStreams refreshing in background GelatoId={GelatoId} userId={UserId} refresh={Refresh}",
                         uri.ExternalId,
-                        userId
+                        userId,
+                        started ? "started" : "joined"
                     );
-                    RunInBackground(item.Id, sync);
                     break;
 
                 case StreamSyncAction.SyncNow:
@@ -186,6 +196,27 @@ public sealed class MediaSourceManagerDecorator(
                     // refresh item
                     libraryManager.GetItemById(item.Id);
                     break;
+            }
+        }
+        else if (
+            StreamSyncPolicy.WaitsForRunningSync(isStreamRow, isItemRead, InStreamSync.Value)
+            && video?.PrimaryVersionId is { } rowPrimaryId
+        )
+        {
+            // A call that plays, probes or downloads this row waits for a sync of its movie that
+            // is running (a background refresh, most likely), so it plays the URL the sync left
+            // and does not probe a row the sync is deleting (the probe's save is guarded anyway,
+            // see ProbeSaveGuard). It never starts a sync: the movie's own reads do. The movie's
+            // syncs run under its id.
+            var running = _lock.JoinIfRunningAsync(rowPrimaryId);
+            if (!running.IsCompleted)
+            {
+                _log.LogDebug(
+                    "Stream row {Id} waits for the running sync of {PrimaryId}",
+                    item.Id,
+                    rowPrimaryId
+                );
+                running.GetAwaiter().GetResult();
             }
         }
 
@@ -386,48 +417,30 @@ public sealed class MediaSourceManagerDecorator(
     {
         _log.LogDebug("GetStaticMediaSources refreshing streams for {Id}", item.Id);
 
-        // Prewarm subtitle cache in the background if Gelato Subtitles
-        // is enabled for this library.
-        var libraryOptions = _libraryManager.GetLibraryOptions(item);
-        var subtitlePrewarmEnabled =
-            libraryOptions.SubtitleDownloadLanguages?.Length > 0
-            && !libraryOptions.DisabledSubtitleFetchers.Contains(
-                "Gelato Subtitles",
-                StringComparer.OrdinalIgnoreCase
-            );
+        // Flows to everything this sync calls, and only to that: an async method restores the
+        // caller's value when it returns.
+        InStreamSync.Value = true;
 
-        if (subtitlePrewarmEnabled)
+        // Everything inside a try: run in the background, nothing would see an exception.
+        try
         {
-            _ = Task.Run(async () =>
-            {
-                try
-                {
-                    await _subtitleProvider
-                        .Value.GetSubtitlesAsync(
-                            uri.ExternalId,
-                            uri.MediaType,
-                            CancellationToken.None
-                        )
-                        .ConfigureAwait(false);
-                }
-                catch (Exception ex)
-                {
-                    _log.LogWarning(ex, "Subtitle prewarm failed for {Uri}", uri);
-                }
-            });
+            PrewarmSubtitles(item, uri);
+        }
+        catch (Exception ex)
+        {
+            _log.LogWarning(ex, "Subtitle prewarm check failed for {Id}", item.Id);
         }
 
         try
         {
-            var count = await manager.SyncStreams(item, userId, ct).ConfigureAwait(false);
-
-            // A version merged into another movie/episode is not synced (its streams belong to
-            // that one), so its zero says nothing, and its key is the other one's: marking it
-            // would hold back that movie's own sync.
-            if (count > 0 || item is not Video { PrimaryVersionId: not null })
-            {
-                manager.SetStreamSync(cacheKey, count);
-            }
+            await StreamSyncPolicy
+                .SyncAndMarkAsync(
+                    token => manager.SyncStreams(item, userId, token),
+                    isMergedVersion: item is Video { PrimaryVersionId: not null },
+                    count => manager.SetStreamSync(cacheKey, count),
+                    ct
+                )
+                .ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -436,10 +449,43 @@ public sealed class MediaSourceManagerDecorator(
     }
 
     /// <summary>
-    /// Starts a stream sync that the request does not wait for. If one is already running for the
-    /// movie/episode, that one is left to finish and no second one starts.
+    /// Fetches the title's subtitles into the cache in the background if Gelato Subtitles is
+    /// enabled for its library.
     /// </summary>
-    private void RunInBackground(Guid itemId, Func<CancellationToken, Task> sync)
+    private void PrewarmSubtitles(BaseItem item, StremioUri uri)
+    {
+        var libraryOptions = _libraryManager.GetLibraryOptions(item);
+        var subtitlePrewarmEnabled =
+            libraryOptions.SubtitleDownloadLanguages?.Length > 0
+            && !libraryOptions.DisabledSubtitleFetchers.Contains(
+                "Gelato Subtitles",
+                StringComparer.OrdinalIgnoreCase
+            );
+
+        if (!subtitlePrewarmEnabled)
+            return;
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await _subtitleProvider
+                    .Value.GetSubtitlesAsync(uri.ExternalId, uri.MediaType, CancellationToken.None)
+                    .ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                _log.LogWarning(ex, "Subtitle prewarm failed for {Uri}", uri);
+            }
+        });
+    }
+
+    /// <summary>
+    /// Starts a stream sync that the request does not wait for. If one is already running for the
+    /// movie/episode, that one is left to finish and no second one starts. Returns true when this
+    /// call started it.
+    /// </summary>
+    private bool RunInBackground(Guid itemId, Func<CancellationToken, Task> sync)
     {
         // Its own token, never the request's: the request ends as soon as it has answered (and
         // Jellyfin cancels the token when the client hangs up), and a sync stopped halfway leaves
@@ -447,10 +493,7 @@ public sealed class MediaSourceManagerDecorator(
         // AIOStreams request, like the waiting sync's.
         // Without the request's context too: the sync outlives the request, and it should run
         // the same whether the request has ended or not, as it does from a scheduled task.
-        using (ExecutionContext.SuppressFlow())
-        {
-            _ = Task.Run(() => _lock.RunSingleFlightAsync(itemId, sync, CancellationToken.None));
-        }
+        return _lock.StartSingleFlightInBackground(itemId, sync);
     }
 
     /// <summary>
@@ -662,6 +705,8 @@ public sealed class MediaSourceManagerDecorator(
         }
 
         var manager = _manager.Value;
+        // Before the sources are read, which may wait for a sync (see StreamWriteKey).
+        var itemWriteKey = StreamWriteKey(item, item);
         var sources = GetStaticMediaSources(item, enablePathSubstitution, user);
 
         requestedSourceId ??= _http.ReadRequest(
@@ -763,6 +808,7 @@ public sealed class MediaSourceManagerDecorator(
         using var claim = needsProbe && !preProbe ? ClaimProbe(probeKey) : null;
         if (needsProbe)
         {
+            var writeKey = StreamWriteKey(owner, item);
             var libraryOptions = _libraryManager.GetLibraryOptions(owner);
             var remuxDbStreams = fromRemuxDb ? remuxDb.GetStreams(owner.Id) : null;
 
@@ -779,6 +825,7 @@ public sealed class MediaSourceManagerDecorator(
 
             await SaveProbedAsync(
                     owner,
+                    writeKey,
                     () =>
                     {
                         if (
@@ -816,7 +863,7 @@ public sealed class MediaSourceManagerDecorator(
         if (item.RunTimeTicks is null && selected.RunTimeTicks is not null)
         {
             item.RunTimeTicks = selected.RunTimeTicks;
-            await SaveProbedAsync(item, null, ct).ConfigureAwait(false);
+            await SaveProbedAsync(item, itemWriteKey, null, ct).ConfigureAwait(false);
         }
 
         if (!preProbe)
@@ -845,39 +892,52 @@ public sealed class MediaSourceManagerDecorator(
     }
 
     /// <summary>
-    /// Saves an item after its probe, as a writer of its movie/episode's rows. Not when it was
-    /// deleted while the probe ran: saving it would bring it back.
+    /// The key a movie/episode's stream syncs and deletions hold (<see
+    /// cref="GelatoManager.RunExclusiveAsync"/>): the movie's id, also for one of its rows.
+    /// Taken before the probe: a sync that deletes the row, or a split of the versions, clears
+    /// the row's owner on the way, and the save would then queue behind nothing.
     /// </summary>
-    private Task SaveProbedAsync(BaseItem probed, Action? beforeSave, CancellationToken ct) =>
+    private static Guid StreamWriteKey(BaseItem row, BaseItem requested) =>
+        (row as Video)?.PrimaryVersionId ?? (requested as Video)?.PrimaryVersionId ?? requested.Id;
+
+    /// <summary>
+    /// Saves an item after its probe (or its run time), as the only writer of its movie/episode's
+    /// rows, queued behind a running sync or deletion. Not when it was deleted while the probe
+    /// ran: saving it would bring it back. A row a sync saved anew meanwhile takes what the sync
+    /// wrote before it is saved (<see cref="ProbeSaveGuard"/>), so the save never undoes the sync.
+    /// </summary>
+    private Task SaveProbedAsync(
+        BaseItem probed,
+        Guid writeKey,
+        Action? beforeSave,
+        CancellationToken ct
+    ) =>
         _manager.Value.RunExclusiveAsync(
-            (probed as Video)?.PrimaryVersionId ?? probed.Id,
+            writeKey,
             async token =>
             {
                 // Asked of the database as well: an episode deleted with its series stays in the
                 // library's cache.
-                var current = _libraryManager.GetItemById(probed.Id);
-                if (current is null || _libraryManager.RetrieveItem(probed.Id) is null)
+                var cached = _libraryManager.GetItemById(probed.Id);
+                var stored = cached is null ? null : _libraryManager.RetrieveItem(probed.Id);
+                var saved = ProbeSaveGuard.ItemToSave(probed, cached, stored);
+                if (saved is null)
                 {
-                    _log.LogDebug("Not saving the probe of {Id}: it was deleted", probed.Id);
+                    // Counted by log watchers: each line is a probe that would have brought back
+                    // a row a sync deleted.
+                    _log.LogInformation(
+                        "Probe result of {Id} not saved: a stream sync deleted it meanwhile",
+                        probed.Id
+                    );
                     return;
                 }
 
-                // A sync that ran during the probe saved the item from a copy of its own and made
-                // that the library's instance. Saving the probed one as it is would undo the sync:
-                // the user it added to the row loses the version until the next sync.
-                var saved = probed;
-                if (!ReferenceEquals(current, probed))
+                if (!ReferenceEquals(cached, probed))
                 {
-                    if (probed.HasStreamTag())
-                    {
-                        TakeSyncedData(current, probed);
-                    }
-                    else
-                    {
-                        // A movie/episode gets nothing but its runtime from a probe.
-                        current.RunTimeTicks ??= probed.RunTimeTicks;
-                        saved = current;
-                    }
+                    _log.LogDebug(
+                        "Probe result of {Id} saved with the data a stream sync wrote meanwhile",
+                        probed.Id
+                    );
                 }
 
                 beforeSave?.Invoke();
@@ -887,24 +947,6 @@ public sealed class MediaSourceManagerDecorator(
             },
             ct
         );
-
-    /// <summary>
-    /// Puts what a sync writes on a stream row onto the instance that was probed: its users,
-    /// order, names and file (the Gelato data), its URL and its movie/episode. What the probe set
-    /// stays.
-    /// </summary>
-    private static void TakeSyncedData(BaseItem synced, BaseItem probed)
-    {
-        probed.ExternalId = synced.ExternalId;
-        probed.Path = synced.Path;
-        probed.ProviderIds = synced.ProviderIds;
-        probed.Tags = synced.Tags;
-        probed.LockedFields = synced.LockedFields;
-        probed.ParentId = synced.ParentId;
-        probed.DateLastRefreshed = synced.DateLastRefreshed;
-        if (synced is Video { PrimaryVersionId: { } primaryId } && probed is Video row)
-            row.SetPrimaryVersionId(primaryId);
-    }
 
     private static MediaSourceInfo? SelectByIdOrFirst(IReadOnlyList<MediaSourceInfo> list, Guid? id)
     {
@@ -1279,6 +1321,21 @@ public sealed class MediaSourceManagerDecorator(
         if (PreProbeFailedRecently(key) || PreparedForPlaybackRecently(key))
             return;
 
+        // A sync of the title is running, most likely the background refresh the page visit
+        // started (RefreshStreamsInBackground): the pre-probe waits for the rows it leaves, so it
+        // neither resolves a URL the sync is replacing nor probes a row it is deleting. Before a
+        // slot is taken: a sync waits for the addon's slowest source.
+        try
+        {
+            await _lock
+                .JoinIfRunningAsync((item as Video)?.PrimaryVersionId ?? item.Id)
+                .ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _log.LogDebug(ex, "Pre-probe of {Id}: the running sync failed", item.Id);
+        }
+
         // Registered only once running: a playback waits for a pre-probe under way, not for one
         // queued behind the others.
         await _preProbeSlots.WaitAsync().ConfigureAwait(false);
@@ -1458,14 +1515,26 @@ public sealed class MediaSourceManagerDecorator(
                     .ConfigureAwait(false);
 
                 // As a writer of the movie's rows: a sync meanwhile may have deleted this one, and
-                // saving it would bring it back.
+                // saving it would bring it back, or saved it anew, and saving this copy as it was
+                // read would undo that (ProbeSaveGuard). The key is the copy's owner, read before
+                // the probe.
                 await _manager
                     .Value.RunExclusiveAsync(
                         row.PrimaryVersionId ?? rowId,
                         async ct =>
                         {
-                            if (_libraryManager.GetItemById(rowId) is null)
+                            var cached = _libraryManager.GetItemById(rowId);
+                            var stored = cached is null
+                                ? null
+                                : _libraryManager.RetrieveItem(rowId);
+                            if (ProbeSaveGuard.ItemToSave(row, cached, stored) is null)
+                            {
+                                _log.LogInformation(
+                                    "Probe result of {Id} not saved: a stream sync deleted it meanwhile",
+                                    rowId
+                                );
                                 return;
+                            }
 
                             if (!remuxDb.OnProbed(row, libraryOptions))
                             {
