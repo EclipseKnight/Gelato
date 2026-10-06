@@ -160,6 +160,39 @@ public sealed class KeyLock
         return lazy.Value;
     }
 
+    /// <summary>
+    /// Starts <paramref name="action"/> for <paramref name="key"/> on the thread pool, unless a
+    /// run for that key is already in flight, which is then left to finish. Either way the caller
+    /// does not wait. Returns true when this call started the run, false when it joined one.
+    /// </summary>
+    /// <remarks>
+    /// The run gets no token and none of the caller's ExecutionContext (its HTTP request, for
+    /// one): it outlives the caller, and it runs the same whichever caller evaluates it first.
+    /// </remarks>
+    public bool StartSingleFlightInBackground(Guid key, Func<CancellationToken, Task> action)
+    {
+        var mine = new Lazy<Task>(
+            () =>
+            {
+                using (ExecutionContext.SuppressFlow())
+                {
+                    return Task.Run(() => Once(key, action, CancellationToken.None));
+                }
+            },
+            LazyThreadSafetyMode.ExecutionAndPublication
+        );
+        var lazy = _inflight.GetOrAdd(key, mine);
+        _ = lazy.Value;
+        return ReferenceEquals(lazy, mine);
+    }
+
+    /// <summary>
+    /// The run for <paramref name="key"/> that is in flight, to wait for, or a completed task when
+    /// there is none. Never starts a run of its own.
+    /// </summary>
+    public Task JoinIfRunningAsync(Guid key) =>
+        _inflight.TryGetValue(key, out var lazy) ? lazy.Value : Task.CompletedTask;
+
     public async Task RunQueuedAsync(
         Guid key,
         Func<CancellationToken, Task> action,
@@ -186,6 +219,7 @@ public sealed class KeyLock
         }
         finally
         {
+            // Also when the action throws or is cancelled: the next call must run it afresh.
             _inflight.TryRemove(key, out _);
         }
     }

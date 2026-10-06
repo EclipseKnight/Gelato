@@ -23,8 +23,9 @@ public class PluginConfiguration : BasePluginConfiguration
     /// <summary>
     /// When a user's streams for a title are due again (<see cref="StreamTTL"/> passed) and that
     /// user still has the rows from the last sync, a details read answers with those rows at once
-    /// and the sync runs in the background. Playback calls still wait for the sync, so what is
-    /// played and probed is always the fresh list.
+    /// and the sync runs in the background. Playback calls still wait for the sync, also when they
+    /// name one stream row (a version opened as an item), so what is played and probed is always
+    /// the fresh list.
     /// </summary>
     public bool RefreshStreamsInBackground { get; set; } = true;
 
