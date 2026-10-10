@@ -283,6 +283,165 @@
             </button>
           </div>
         </form>
+        <div class="verticalSection" id="gelatoDuplicates" style="margin-top: 2.5em;">
+          <h3 class="sectionTitle">Possible duplicates</h3>
+          <div class="fieldDescription">A read-only report from the "Possible duplicates report" task. Nothing is merged or deleted here. <b>Likely</b>: almost certainly the same title twice. <b>Related</b>: shares some episodes with another series (often a sequel or a split season). <b>Maybe</b>: shares only a TVDB or TMDB id, which seasons and remakes often do. Excluding a title stops future imports of it; it removes nothing from the library.</div>
+          <div style="display: flex; gap: .6em; flex-wrap: wrap; margin: 1em 0;">
+            <button id="btnDupRun" is="emby-button" type="button" class="raised emby-button"><span>Run report now</span></button>
+            <button id="btnDupReload" is="emby-button" type="button" class="raised emby-button"><span>Reload</span></button>
+          </div>
+          <div id="dupSummary" class="fieldDescription"></div>
+          <div id="dupList"></div>
+          <h3 class="sectionTitle" style="margin-top: 1.5em;">Exclude list</h3>
+          <div class="fieldDescription">Stremio id, IMDb id (tt…) or provider:id (kitsu:12, tvdb:123). Text after a # is a note.</div>
+          <div style="display: flex; gap: .6em; align-items: center; margin: .6em 0;">
+            <input is="emby-input" type="text" id="txtDupExclude" placeholder="tt1234567 # why" style="flex: 1;" />
+            <button id="btnDupExclude" is="emby-button" type="button" class="raised emby-button"><span>Add</span></button>
+          </div>
+          <div id="dupExcluded"></div>
+        </div>
+        <script type="text/javascript">
+          (function () {
+            const pluginId = "94EA4E14-8163-4989-96FE-0A2094BC2D6A";
+            const page = document.querySelector('#gelatoConfigurationPage');
+            const $ = (s) => page.querySelector(s);
+            const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+            const levels = ['Likely', 'Related', 'Maybe'];
+            const level = (c) => (typeof c === 'number' ? levels[c] : c) || 'Maybe';
+
+            let allItems = [];
+
+            // The id the copy was imported under: its catalogue (Stremio) id, else its IMDb id.
+            function ownId(ids) {
+              return ids.Stremio || ids.stremio || ids.Imdb || ids.imdb || '';
+            }
+
+            // shortcut: checks only items in the report, not the whole library; query the library if a real show outside the report can share the id.
+            function othersWith(entry, itemId) {
+              const v = entry.toLowerCase();
+              return allItems.filter((i) => String(i.Id ?? i.id).replace(/-/g, '') !== itemId
+                && Object.entries(i.ProviderIds ?? i.providerIds ?? {}).some(([k, x]) => x && (String(x).toLowerCase() === v || `${k}:${x}`.toLowerCase() === v)));
+            }
+
+            async function loadReport() {
+              $('#dupList').innerHTML = '';
+              let report;
+              try {
+                report = await window.ApiClient.getJSON(window.ApiClient.getUrl('gelato/duplicates'));
+              } catch (e) {
+                $('#dupSummary').textContent = 'No report yet. Use "Run report now".';
+                return;
+              }
+              const findings = report.findings || report.Findings || [];
+              allItems = findings.flatMap((f) => f.Items ?? f.items ?? []);
+              const counts = levels.map((l) => findings.filter((f) => level(f.Confidence ?? f.confidence) === l).length);
+              const when = report.generatedUtc ? new Date(report.generatedUtc).toLocaleString() : '';
+              $('#dupSummary').textContent = `${when}: ${counts[0]} likely, ${counts[1]} related, ${counts[2]} maybe.`;
+              const serverId = window.ApiClient.serverId();
+              let html = '';
+              for (const l of levels) {
+                const group = findings.filter((f) => level(f.Confidence ?? f.confidence) === l);
+                if (!group.length) continue;
+                html += `<details ${l === 'Likely' ? 'open' : ''} style="margin: .8em 0;"><summary style="cursor: pointer; font-weight: 600;">${l} (${group.length})</summary>`;
+                for (const f of group) {
+                  html += `<div class="paperList" style="padding: .6em .8em; margin: .5em 0;"><div style="opacity: .8; margin-bottom: .3em;">${esc(f.Reason ?? f.reason)}</div>`;
+                  for (const i of (f.Items ?? f.items ?? [])) {
+                    const id = String(i.Id ?? i.id).replace(/-/g, '');
+                    const ids = i.ProviderIds ?? i.providerIds ?? {};
+                    const own = ownId(ids);
+                    const idText = Object.entries(ids).filter(([k, v]) => v && !k.toLowerCase().startsWith('gelato')).map(([k, v]) => `${k}=${v}`).join(', ');
+                    const img = window.ApiClient.getUrl('Items/' + id + '/Images/Primary', { maxHeight: 96, quality: 80 });
+                    html += `<div style="display: flex; gap: .8em; align-items: center; padding: .3em 0;">`
+                      + `<img src="${esc(img)}" alt="" loading="lazy" style="height: 72px; width: 48px; object-fit: cover; border-radius: 3px; background: rgba(255,255,255,.08);" onerror="this.style.visibility='hidden'">`
+                      + `<div style="flex: 1; min-width: 0;"><a is="emby-linkbutton" class="button-link" href="#/details?id=${esc(id)}&serverId=${esc(serverId)}">${esc(i.Name ?? i.name)}</a>`
+                      + `<div style="opacity: .7; font-size: .9em;">${esc(i.Kind ?? i.kind)} · ${esc(i.RegularEpisodes ?? i.regularEpisodes)} regular episodes · ${esc(id)}</div>`
+                      + `<div style="opacity: .55; font-size: .85em; overflow-wrap: anywhere;">${esc(idText)}</div></div>`
+                      + (own ? `<button is="emby-button" type="button" class="emby-button" data-exclude="${esc(own)}" data-item="${esc(id)}" data-name="${esc(i.Name ?? i.name)}" style="padding: .1em .6em;">Exclude</button>` : '')
+                      + `</div>`;
+                  }
+                  html += `</div>`;
+                }
+                html += `</details>`;
+              }
+              $('#dupList').innerHTML = html;
+            }
+
+            async function runReport() {
+              try {
+                const tasks = await window.ApiClient.getJSON(window.ApiClient.getUrl('ScheduledTasks'));
+                const task = tasks.find((t) => t.Key === 'GelatoDuplicatesReport');
+                if (!task) throw new Error('task not found');
+                await window.ApiClient.ajax({ type: 'POST', url: window.ApiClient.getUrl('ScheduledTasks/Running/' + task.Id) });
+                $('#dupSummary').textContent = 'Report running…';
+                for (let n = 0; n < 120; n++) {
+                  await new Promise((r) => setTimeout(r, 3000));
+                  const t = await window.ApiClient.getJSON(window.ApiClient.getUrl('ScheduledTasks/' + task.Id));
+                  if (t.State === 'Idle') break;
+                }
+                await loadReport();
+              } catch (e) {
+                console.error(e);
+                Dashboard.alert('Could not run the duplicates report.');
+              }
+            }
+
+            async function loadExcluded() {
+              const cfg = await window.ApiClient.getPluginConfiguration(pluginId);
+              const list = cfg.ExcludedIds || [];
+              $('#dupExcluded').innerHTML = list.length
+                ? list.map((e, n) => `<div style="display: flex; gap: .6em; align-items: center;"><code>${esc(e)}</code><button is="emby-button" type="button" class="emby-button" data-unexclude="${n}" style="padding: .1em .6em;">Remove</button></div>`).join('')
+                : '<div class="fieldDescription">Empty.</div>';
+            }
+
+            async function changeExcluded(change) {
+              Dashboard.showLoadingMsg();
+              try {
+                // Fresh copy, so nothing else on the page is overwritten.
+                const cfg = await window.ApiClient.getPluginConfiguration(pluginId);
+                cfg.ExcludedIds = change(cfg.ExcludedIds || []);
+                await window.ApiClient.updatePluginConfiguration(pluginId, cfg);
+                await loadExcluded();
+              } catch (e) {
+                console.error(e);
+                Dashboard.alert('Could not save the exclude list.');
+              } finally {
+                Dashboard.hideLoadingMsg();
+              }
+            }
+
+            function addExclude(entry) {
+              entry = (entry || '').trim();
+              if (!entry) return;
+              changeExcluded((list) => (list.some((e) => e.split('#')[0].trim().toLowerCase() === entry.split('#')[0].trim().toLowerCase()) ? list : [...list, entry]));
+            }
+
+            page.addEventListener('pageshow', () => {
+              loadReport();
+              loadExcluded();
+            });
+            $('#btnDupRun').addEventListener('click', runReport);
+            $('#btnDupReload').addEventListener('click', loadReport);
+            $('#btnDupExclude').addEventListener('click', () => {
+              addExclude($('#txtDupExclude').value);
+              $('#txtDupExclude').value = '';
+            });
+            $('#dupList').addEventListener('click', (ev) => {
+              const b = ev.target.closest('[data-exclude]');
+              if (!b) return;
+              const shared = othersWith(b.dataset.exclude, b.dataset.item);
+              if (shared.length) {
+                Dashboard.alert(`Not excluded: ${b.dataset.exclude} is also an id of ${shared.map((i) => i.Name ?? i.name).join(', ')}. Excluding it would stop that show too.`);
+                return;
+              }
+              if (confirm(`Exclude ${b.dataset.name} (${b.dataset.exclude}) from future imports? Nothing is removed from the library.`))
+                addExclude(`${b.dataset.exclude} # ${b.dataset.name}`);
+            });
+            $('#dupExcluded').addEventListener('click', (ev) => {
+              const b = ev.target.closest('[data-unexclude]');
+              if (b) changeExcluded((list) => list.filter((_, n) => n !== Number(b.dataset.unexclude)));
+            });
+          })();
+        </script>
       </div>
     </div>
 

@@ -607,6 +607,9 @@ def sc_dupreport(jf, addon, c):
     reason = (likely[0].get("reason") or likely[0].get("Reason") or "") if likely else ""
     c.true("reason says the same show", "the same show" in reason)
     c.eq("library unchanged by the report", snapshot(jf), before)
+    page = jf.call("GET", "/web/ConfigurationPage?name=config", raw=True) or b""
+    page = page.decode() if isinstance(page, bytes) else str(page)
+    c.true("config page has the Possible duplicates section", 'id="gelatoDuplicates"' in page and "GelatoDuplicatesReport" in page)
 
 
 def sc_exclude(jf, addon, c):
