@@ -33,6 +33,15 @@ public class PluginConfiguration : BasePluginConfiguration
     public string Url { get; set; } = "";
     public bool EnableMixed { get; set; } = false;
     public bool ExtendLocalSeriesTrees { get; set; } = false;
+
+    /// <summary>
+    /// Days between tree sync runs that also check series which are not continuing (ended,
+    /// unreleased, no status), so shows that come back are found. 0 turns the pass off.
+    /// </summary>
+    public int FullSeriesSyncDays { get; set; } = 7;
+
+    /// <summary>When the last such pass finished (UTC). Set by the tree sync.</summary>
+    public DateTime? LastFullSeriesSync { get; set; }
     public bool FilterUnreleased { get; set; } = false;
     public int FilterUnreleasedBufferDays { get; set; } = 0;
     public bool DisableSourceCount { get; set; } = true;

@@ -1,3 +1,4 @@
+using Gelato.Services;
 using System.Globalization;
 using System.Net;
 using System.Text.RegularExpressions;
@@ -202,10 +203,11 @@ public class GelatoStremioProvider(
     public async Task<StremioMeta?> GetMetaAsync(
         string id,
         StremioMediaType mediaType,
-        TimeSpan? ttl = null
+        TimeSpan? ttl = null,
+        bool fresh = false
     )
     {
-        var cached = GetCachedMeta(id);
+        var cached = fresh ? null : GetCachedMeta(id);
         if (cached is not null)
             return cached;
 
@@ -284,7 +286,10 @@ public class GelatoStremioProvider(
             .ConfigureAwait(false);
     }
 
-    public async Task<StremioMeta?> GetMetaAsync(BaseItem item)
+    /// <param name="item">The library item.</param>
+    /// <param name="fresh">Ask the addon even when the meta is cached. The tree sync uses it: a
+    /// meta cached by an import a few minutes earlier may already be out of date.</param>
+    public async Task<StremioMeta?> GetMetaAsync(BaseItem item, bool fresh = false)
     {
         // Not a failure: the meta is looked up under the item's other ids too.
         if (item.GetProviderId("Imdb") is null)
@@ -296,7 +301,12 @@ public class GelatoStremioProvider(
             return null;
         }
 
-        return await GetMetaAsync(item.ProviderIds, item.GetBaseItemKind().ToStremio())
+        return await GetMetaAsync(
+                MetaIdCandidates(item.ProviderIds),
+                item.GetBaseItemKind().ToStremio(),
+                null,
+                fresh
+            )
             .ConfigureAwait(false);
     }
 
@@ -309,7 +319,8 @@ public class GelatoStremioProvider(
     private async Task<StremioMeta?> GetMetaAsync(
         IEnumerable<string?> ids,
         StremioMediaType mediaType,
-        TimeSpan? ttl = null
+        TimeSpan? ttl = null,
+        bool fresh = false
     )
     {
         var candidates = ids.Where(id => !string.IsNullOrWhiteSpace(id))
@@ -336,7 +347,7 @@ public class GelatoStremioProvider(
             var last = i == candidates.Count - 1;
             try
             {
-                var meta = await GetMetaAsync(candidates[i], mediaType, ttl).ConfigureAwait(false);
+                var meta = await GetMetaAsync(candidates[i], mediaType, ttl, fresh).ConfigureAwait(false);
                 if (meta is not null || last)
                     return meta;
             }
@@ -770,7 +781,7 @@ public class StremioMeta
 
     public DateTime? Released { get; set; }
 
-    [JsonConverter(typeof(SafeStringEnumConverter<StremioStatus>))]
+    [JsonConverter(typeof(StremioStatusConverter))]
     // ReSharper disable once MemberCanBePrivate.Global
     public StremioStatus? Status { get; set; } = StremioStatus.Unknown;
 
@@ -975,6 +986,21 @@ public class StremioMeta
 
         // If we have no release information, assume it's not released
         return false;
+    }
+
+    /// <summary>
+    /// The status the add-on states: the status field, or a year range in releaseInfo. Null when
+    /// it only can be guessed (single year, first episode date), so a stored status is never
+    /// changed on a guess.
+    /// </summary>
+    public StremioStatus? GetStatedStatus()
+    {
+        if (Status is not null and not StremioStatus.Unknown)
+            return Status;
+        var r = ReleaseInfo?.Trim();
+        if (string.IsNullOrEmpty(r) || !r.Contains('-'))
+            return null;
+        return r.EndsWith('-') ? StremioStatus.Continuing : StremioStatus.Ended;
     }
 
     public StremioStatus? GetStatus()

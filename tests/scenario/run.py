@@ -25,7 +25,6 @@ AUTH = 'MediaBrowser Client="gelato-scenario", Device="runner", DeviceId="gelato
 # Scenarios that fail on purpose until the fix named here lands. A known failure doesn't fail
 # the run; a known failure that passes is reported so its entry can be removed.
 KNOWN = {
-    "comeback": "an Ended series is never re-synced (fix: keep series status current)",
     "reattach": "a collision on reattach leaves the older row parked (fix: merge colliding watch-state rows)",
     "blackclover": "a season listed as its own entry becomes its own series (fix: file split seasons)",
 }
