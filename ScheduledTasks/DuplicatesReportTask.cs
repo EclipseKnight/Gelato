@@ -60,9 +60,12 @@ public sealed class DuplicatesReportTask(
                 }
             )
             .OfType<Episode>()
-            .Where(e => e.ParentIndexNumber is > 0 && !e.IsStream())
+            .Where(e => !e.IsStream())
             .GroupBy(e => e.SeriesId)
-            .ToDictionary(g => g.Key, g => g.Count());
+            .ToDictionary(
+                g => g.Key,
+                g => (Regular: g.Count(e => e.ParentIndexNumber is > 0), Specials: g.Count(e => e.ParentIndexNumber is null or 0))
+            );
         progress.Report(60);
 
         var records = items
@@ -71,7 +74,8 @@ public sealed class DuplicatesReportTask(
                 i.Name ?? "",
                 i.GetBaseItemKind().ToString(),
                 new Dictionary<string, string>(i.ProviderIds, StringComparer.OrdinalIgnoreCase),
-                episodeCounts.GetValueOrDefault(i.Id)
+                episodeCounts.GetValueOrDefault(i.Id).Regular,
+                episodeCounts.GetValueOrDefault(i.Id).Specials
             ))
             .ToList();
 
