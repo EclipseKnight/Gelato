@@ -23,11 +23,23 @@ public sealed class RemuxDbService(
     IMediaStreamRepository mediaStreams,
     IChapterRepository chapters,
     ILibraryManager libraryManager,
+    MediaBrowser.Common.Configuration.IApplicationPaths appPaths,
     ILogger<RemuxDbService> log
 )
 {
     public const string SourceRemuxDb = "remuxdb";
     public const string SourceProbe = "probe";
+    public const string SourceCache = "cache";
+
+    private static bool CacheEnabled => GelatoPlugin.Instance?.Configuration.MediaInfoCacheEnabled ?? false;
+
+    private string? CacheKey(StreamIdentity identity)
+    {
+        if (!CacheEnabled)
+            return null;
+        Gelato.Services.MediaInfoCache.Init(Path.Combine(appPaths.DataPath, "gelato"));
+        return Gelato.Services.MediaInfoCache.Key(identity.InfoHash, identity.FileIdx);
+    }
 
     private static bool Enabled => GelatoPlugin.Instance?.Configuration.RemuxDbEnabled ?? false;
 
@@ -75,7 +87,7 @@ public sealed class RemuxDbService(
         row.SetGelatoData("size", identity.Size);
 
         var source = row.GelatoData<string>("mediaInfo");
-        if (source == SourceProbe)
+        if (source is SourceProbe or SourceCache)
             return null;
 
         // Rows probed before sources were recorded, looked for once per row.
@@ -88,6 +100,9 @@ public sealed class RemuxDbService(
                 return null;
             }
         }
+
+        if (FromCache(row, identity, primary) is { } cached)
+            return cached;
 
         var version = RemuxDbMapper.Match(versions, identity);
         if (version is null || !RemuxDbMapper.IsUsable(version))
@@ -135,6 +150,25 @@ public sealed class RemuxDbService(
         return new PendingMediaInfo(row.Id, streams, ToChapters(version));
     }
 
+    /// <summary>Fills the row from a probe of the same file kept on this server.</summary>
+    private PendingMediaInfo? FromCache(Video row, StreamIdentity identity, Video primary)
+    {
+        if (Gelato.Services.MediaInfoCache.Get(CacheKey(identity)) is not { } e)
+            return null;
+        if (primary.RunTimeTicks is > 0 && !RemuxDbMapper.RuntimeFits(e.RunTimeTicks, primary.RunTimeTicks))
+            return null;
+        row.RunTimeTicks = e.RunTimeTicks;
+        row.Container = e.Container;
+        row.Size = e.Size ?? identity.Size;
+        row.TotalBitrate = e.TotalBitrate;
+        row.Width = e.Width;
+        row.Height = e.Height;
+        row.DefaultVideoStreamIndex = e.DefaultVideoStreamIndex;
+        row.HasSubtitles = e.HasSubtitles;
+        row.SetGelatoData("mediaInfo", SourceCache);
+        return new PendingMediaInfo(row.Id, e.Streams, []);
+    }
+
     /// <summary>Saves tracks and chapters <see cref="Apply"/> prepared.</summary>
     public void Save(IEnumerable<PendingMediaInfo> pending, CancellationToken ct)
     {
@@ -158,6 +192,30 @@ public sealed class RemuxDbService(
 
         var wasRemuxDb = row.GelatoData<string>("mediaInfo") == SourceRemuxDb;
         row.SetGelatoData("mediaInfo", SourceProbe);
+
+        var identity = new StreamIdentity(
+            row.GelatoData<string>("infoHash"),
+            row.GelatoData<int?>("fileIdx"),
+            row.GelatoData<long?>("size"),
+            null
+        );
+        if (CacheKey(identity) is { } key)
+        {
+            Gelato.Services.MediaInfoCache.Put(
+                key,
+                new Gelato.Services.MediaInfoCache.Entry(
+                    row.RunTimeTicks.Value,
+                    row.Container,
+                    row.Size,
+                    row.TotalBitrate,
+                    row.Width,
+                    row.Height,
+                    row.DefaultVideoStreamIndex,
+                    streams.Any(s => s.Type == MediaStreamType.Subtitle),
+                    streams.ToList()
+                )
+            );
+        }
 
         // A file RemuxDB knew: nothing to send.
         if (!Contribute || wasRemuxDb)

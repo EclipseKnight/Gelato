@@ -35,6 +35,12 @@ public class PluginConfiguration : BasePluginConfiguration
     public bool RemuxDbEnabled { get; set; } = true;
 
     /// <summary>
+    /// Keep probe results on this server by file, so a file probed once shows its tracks for
+    /// every stream row and user that gets the same file. Nothing is sent anywhere.
+    /// </summary>
+    public bool MediaInfoCacheEnabled { get; set; } = true;
+
+    /// <summary>
     /// Probe a stream before it is played: when its item is opened or another version of it is
     /// picked, and the next episode while an episode nears its end. Playback of a stream
     /// that needs a probe then starts without waiting for it.
@@ -170,6 +176,7 @@ public class UserConfig
             CreateCollections = baseConfig.CreateCollections,
             MaxCollectionItems = baseConfig.MaxCollectionItems,
             RemuxDbEnabled = baseConfig.RemuxDbEnabled,
+            MediaInfoCacheEnabled = baseConfig.MediaInfoCacheEnabled,
             PreProbe = baseConfig.PreProbe,
             RemuxDbContribute = baseConfig.RemuxDbContribute,
             RemuxDbUrl = baseConfig.RemuxDbUrl,
