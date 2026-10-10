@@ -57,6 +57,7 @@ public class PluginConfiguration : BasePluginConfiguration
         "https://raw.githubusercontent.com/Fribb/anime-lists/master/anime-list-full.json";
 
     /// <summary>When the last such pass finished (UTC). Set by the tree sync.</summary>
+    /// <summary>Read once as a fallback; the time now lives in gelato/last-full-series-sync.txt.</summary>
     public DateTime? LastFullSeriesSync { get; set; }
     public bool FilterUnreleased { get; set; } = false;
     public int FilterUnreleasedBufferDays { get; set; } = 0;

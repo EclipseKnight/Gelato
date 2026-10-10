@@ -2598,7 +2598,12 @@ public sealed class GelatoManager(
         // Once a week also check the Gelato series that are not continuing, so a show the add-on
         // now lists as continuing again gets its status and its new seasons.
         var now = DateTime.UtcNow;
-        var fullPass = SeriesStatusMap.FullPassDue(cfg.LastFullSeriesSync, now, cfg.FullSeriesSyncDays);
+        var stateFolder = Path.Combine(appPaths.DataPath, "gelato");
+        var fullPass = SeriesStatusMap.FullPassDue(
+            FullPassState.Read(stateFolder, cfg.LastFullSeriesSync),
+            now,
+            cfg.FullSeriesSyncDays
+        );
         if (fullPass)
         {
             var seen = continuingSeries.Select(s => s.Id).ToHashSet();
@@ -2671,9 +2676,15 @@ public sealed class GelatoManager(
 
         if (fullPass && !cancellationToken.IsCancellationRequested)
         {
-            var plugin = GelatoPlugin.Instance!;
-            plugin.Configuration.LastFullSeriesSync = now;
-            plugin.SaveConfiguration();
+            if (SeriesStatusMap.FullPassSucceeded(total, failed, noMeta))
+                FullPassState.Write(stateFolder, now);
+            else
+                _log.LogWarning(
+                    "SyncSeriesTrees: weekly pass not counted as done, {Failed} failed and {NoMeta} had no meta of {Total}; it runs again next time.",
+                    failed,
+                    noMeta,
+                    total
+                );
         }
 
         _log.LogInformation(

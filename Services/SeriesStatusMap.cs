@@ -60,6 +60,13 @@ public static class SeriesStatusMap
     /// <summary>Whether the weekly pass over series that are not continuing is due.</summary>
     public static bool FullPassDue(DateTime? last, DateTime now, int days) =>
         days > 0 && (last is null || now - last.Value >= TimeSpan.FromDays(days));
+
+    /// <summary>
+    /// A weekly pass counts as done only when most series synced; an add-on outage that fails
+    /// most of them should not put the recheck off for another week.
+    /// </summary>
+    public static bool FullPassSucceeded(int total, int failed, int noMeta) =>
+        total == 0 || (total - failed - noMeta) * 2 > total;
 }
 
 public sealed class StremioStatusConverter : JsonConverter<StremioStatus>
