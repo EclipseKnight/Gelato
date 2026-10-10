@@ -1,7 +1,7 @@
 ---
 name: "Gelato"
 guid: "94EA4E14-8163-4989-96FE-0A2094BC2D6A"
-version: "0.26.22.112"
+version: "0.26.22.113"
 targetAbi: "12.1.0.0"
 framework: "net10.0"
 owner: "lstb1t"
@@ -14,7 +14,7 @@ category: "General"
 # The card in the plugin catalog; Jellyfin downloads it when it reads the repository.
 imageUrl: "https://raw.githubusercontent.com/lostb1t/Gelato/main/banner.png"
 changelog: >
-  Altffour build 0.26.22.112 on upstream main e4ff1b8 (v0.26.22.0 and later fixes, Jellyfin
+  Altffour build 0.26.22.113 on upstream main e4ff1b8 (v0.26.22.0 and later fixes, Jellyfin
   12.1): deterministic stream identity (upstream PR #142); JSON converters use TrySkip (fixes
   seasonPosters/enum parse failures under DeserializeAsync); search-result posters are resized
   like library images. A stream sync that finds no streams is remembered per user for
@@ -58,3 +58,6 @@ changelog: >
   so one collision used to leave every parked row behind.
   A season filed from a split anime entry is not added again when the show's own data later
   lists that season under other episode numbers; the filed episodes stay the season.
+  The weekly pass counts as done only when most series synced (an add-on outage no longer puts
+  the recheck off a week), and its time is kept in data/gelato/last-full-series-sync.txt instead
+  of rewriting the plugin configuration.
