@@ -1,0 +1,24 @@
+{
+ "meta": {
+  "id": "mal:61967",
+  "type": "series",
+  "name": "Black Clover Season 2",
+  "_tvdbId": "331753",
+  "videos": [
+   {
+    "id": "mal:61967:1:1",
+    "title": "Episode 1",
+    "season": 1,
+    "episode": 1,
+    "released": "2020-01-01T00:00:00Z"
+   },
+   {
+    "id": "mal:61967:1:2",
+    "title": "Episode 2",
+    "season": 1,
+    "episode": 2,
+    "released": "2020-01-01T00:00:00Z"
+   }
+  ]
+ }
+}
