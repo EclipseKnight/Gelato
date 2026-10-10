@@ -1547,6 +1547,8 @@ public sealed class GelatoManager(
 
         var seasonsInserted = 0;
         var episodesInserted = 0;
+        var conflicts = 0;
+        string? conflictOwner = null;
 
         var newSeasons = new List<Season>();
         var repairedSeasons = new List<Season>();
@@ -1712,10 +1714,25 @@ public sealed class GelatoManager(
                 // path the new episode gets and the id is that path's hash, so saving the new one
                 // would replace it, lock and all (lostb1t/Gelato#73). Update that row from the
                 // meta instead, which leaves a locked episode untouched.
-                if (
-                    ExistingItemAt<Episode>(episode.Path) is { } collidingEpisode
-                    && collidingEpisode.SeriesId == series.Id
-                )
+                var collidingEpisode = ExistingItemAt<Episode>(episode.Path);
+                var ownership = EpisodeOwnership.Decide(
+                    collidingEpisode?.SeriesId,
+                    series.Id,
+                    collidingEpisode is not null
+                        && libraryManager.GetItemById(collidingEpisode.SeriesId) is Series
+                );
+                if (ownership == EpisodeOwnership.Decision.OwnedByAnother)
+                {
+                    // Another series already owns the row at this path (two catalog entries
+                    // listing the same episode ids). Moving it here would move it back on the
+                    // other series' next sync, every start, and take watch state along. The
+                    // first owner keeps it; the clash is logged once per series below.
+                    conflicts++;
+                    conflictOwner ??= collidingEpisode!.SeriesName;
+                    continue;
+                }
+
+                if (ownership == EpisodeOwnership.Decision.UpdateOwn)
                 {
                     if (collidingEpisode.IsLocked)
                     {
@@ -1796,6 +1813,16 @@ public sealed class GelatoManager(
             {
                 libraryManager.RegisterItem(episode);
             }
+        }
+
+        if (conflicts > 0)
+        {
+            _log.LogWarning(
+                "{SeriesName}: {Count} episode(s) already belong to another series ({Owner}), left where they are",
+                series.Name,
+                conflicts,
+                conflictOwner
+            );
         }
 
         stopwatch.Stop();

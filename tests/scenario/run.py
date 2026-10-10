@@ -26,7 +26,6 @@ AUTH = 'MediaBrowser Client="gelato-scenario", Device="runner", DeviceId="gelato
 # the run; a known failure that passes is reported so its entry can be removed.
 KNOWN = {
     "onepiece": "IMDb id change creates a second series (fix: identify items by native id)",
-    "sharedepisodes": "two series fight over the same episodes (fix: one owner per episode)",
     "comeback": "an Ended series is never re-synced (fix: keep series status current)",
     "reattach": "a collision on reattach leaves the older row parked (fix: merge colliding watch-state rows)",
     "blackclover": "a season listed as its own entry becomes its own series (fix: file split seasons)",
