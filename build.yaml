@@ -1,7 +1,7 @@
 ---
 name: "Gelato"
 guid: "94EA4E14-8163-4989-96FE-0A2094BC2D6A"
-version: "0.26.22.102"
+version: "0.26.22.103"
 targetAbi: "12.1.0.0"
 framework: "net10.0"
 owner: "lstb1t"
@@ -14,7 +14,7 @@ category: "General"
 # The card in the plugin catalog; Jellyfin downloads it when it reads the repository.
 imageUrl: "https://raw.githubusercontent.com/lostb1t/Gelato/main/banner.png"
 changelog: >
-  Altffour build 0.26.22.102 on upstream main e4ff1b8 (v0.26.22.0 and later fixes, Jellyfin
+  Altffour build 0.26.22.103 on upstream main e4ff1b8 (v0.26.22.0 and later fixes, Jellyfin
   12.1): deterministic stream identity (upstream PR #142); JSON converters use TrySkip (fixes
   seasonPosters/enum parse failures under DeserializeAsync); search-result posters are resized
   like library images. A stream sync that finds no streams is remembered per user for
@@ -26,3 +26,6 @@ changelog: >
   what a sync wrote meanwhile, the delayed RemuxDB probe included. An item read sent with
   Purpose: prefetch or Sec-Purpose: prefetch (a card hovered or focused) returns its versions and
   syncs streams as before, but schedules no pre-probe; only a real page open does.
+  A manifest may list resources as plain names. A tree sync never moves an episode another
+  series owns: two catalog entries listing the same episode ids no longer move the episodes back
+  and forth on every sync and start; the clash is logged once per series.
