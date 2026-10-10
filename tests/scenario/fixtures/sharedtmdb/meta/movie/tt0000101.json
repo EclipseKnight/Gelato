@@ -1,0 +1,11 @@
+{
+ "meta": {
+  "id": "tt0000101",
+  "type": "movie",
+  "name": "Film A",
+  "releaseInfo": "2020",
+  "year": 2020,
+  "released": "2020-01-01T00:00:00.000Z",
+  "_tmdbId": "5555"
+ }
+}

@@ -1,0 +1,9 @@
+{
+ "streams": [
+  {
+   "name": "A",
+   "title": "1080p",
+   "url": "http://example.invalid/a.mkv"
+  }
+ ]
+}
