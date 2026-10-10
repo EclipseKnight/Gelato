@@ -23,6 +23,7 @@ data folder). The run refuses to start if the port is in use.
 | `sharedepisodes` | Two entries claiming the same episodes don't move them back and forth |
 | `comeback` | An Ended series that comes back gets its new season |
 | `blackclover` | A season listed as its own entry is filed under the show |
+| `reattach` | A deleted film comes back while it already holds a newer row for the same keys (set up in the stopped server's database): the newer row stays, nothing is left parked, no warning |
 
-The last four fail today and are listed in `KNOWN` in `run.py` with the fix each waits for. A
+The last five fail today and are listed in `KNOWN` in `run.py` with the fix each waits for. A
 known failure doesn't fail the run; one that starts passing is reported so its entry can go.

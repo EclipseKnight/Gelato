@@ -28,6 +28,7 @@ KNOWN = {
     "onepiece": "IMDb id change creates a second series (fix: identify items by native id)",
     "sharedepisodes": "two series fight over the same episodes (fix: one owner per episode)",
     "comeback": "an Ended series is never re-synced (fix: keep series status current)",
+    "reattach": "a collision on reattach leaves the older row parked (fix: merge colliding watch-state rows)",
     "blackclover": "a season listed as its own entry becomes its own series (fix: file split seasons)",
 }
 
@@ -107,6 +108,20 @@ class Jellyfin:
     def restart(self):
         subprocess.run(["docker", "restart", self.name], check=True, stdout=subprocess.DEVNULL)
         self.wait()
+
+    def stop(self):
+        subprocess.run(["docker", "stop", self.name], check=True, stdout=subprocess.DEVNULL)
+
+    def resume(self):
+        subprocess.run(["docker", "start", self.name], check=True, stdout=subprocess.DEVNULL)
+        self.wait()
+        self.login()
+
+    def sql(self, query):
+        """Runs SQL on the stopped server's database (only to set up a scenario)."""
+        db = os.path.join(self.work, "config", "data", "jellyfin.db")
+        out = subprocess.run(["sqlite3", "-json", db, query], check=True, capture_output=True, text=True).stdout
+        return json.loads(out) if out.strip() else []
 
     def remove(self):
         subprocess.run(["docker", "rm", "-f", self.name], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -194,6 +209,13 @@ class Jellyfin:
 
     def delete(self, item_id):
         self.call("DELETE", f"/Items/{item_id}")
+
+    def all_log(self):
+        lines = []
+        for f in sorted(glob.glob(os.path.join(self.work, "config", "log", "*.log"))):
+            with open(f, errors="replace") as fh:
+                lines += fh.readlines()
+        return lines
 
     def errors(self):
         lines = []
@@ -353,6 +375,52 @@ def sc_streams(jf, addon, c):
         addon.delay = 0.0
 
 
+def sc_reattach(jf, addon, c):
+    """The item already has a newer row for a key that also waits on the placeholder."""
+    addon.stage = os.path.join(FIXTURES, "reattach")
+    import_all(jf)
+    film = by_name(jf.items("Movie")).get("Collide Film", [])
+    c.eq("film imported", len(film), 1)
+    if not film:
+        return
+    item = film[0]["Id"]
+    jf.mark_played(jf.viewer, item)
+    jf.delete(item)
+    jf.stop()
+    uid = jf.viewer.replace("-", "").upper()
+    parked = [r for r in jf.sql("SELECT ItemId, UserId, CustomDataKey FROM UserData WHERE RetentionDate IS NOT NULL")
+              if r["UserId"].replace("-", "").upper() == uid]
+    c.true("viewer's row parked after the delete", len(parked) > 0)
+    if not parked:
+        jf.resume()
+        return
+    # Gelato item ids are a hash of path and type, so the re-imported film gets the same id.
+    # Give it a newer row (half watched, not played) under the same key before the import.
+    item_guid = "-".join([item[:8], item[8:12], item[12:16], item[16:20], item[20:]]).upper()
+    keys = sorted({r["CustomDataKey"] for r in parked})
+    user_id = parked[0]["UserId"]
+    for key in keys:
+        jf.sql("INSERT INTO UserData (ItemId, UserId, CustomDataKey, IsFavorite, LastPlayedDate, PlayCount, "
+               f"PlaybackPositionTicks, Played) VALUES ('{item_guid}', '{user_id}', '{key}', 1, "
+               "'2030-01-01 00:00:00', 1, 6000000000, 0)")
+    jf.resume()
+    before = sum("Could not reattach" in l for l in jf.all_log())
+    import_all(jf)
+    back = by_name(jf.items("Movie")).get("Collide Film", [])
+    c.eq("film re-imported under the same id", [b["Id"] for b in back], [item])
+    c.eq("'Could not reattach' warnings", sum("Could not reattach" in l for l in jf.all_log()) - before, 0)
+    jf.stop()
+    quoted = ", ".join(f"'{k}'" for k in keys)
+    rows = jf.sql(f"SELECT CustomDataKey, PlaybackPositionTicks, IsFavorite FROM UserData WHERE ItemId = '{item_guid}' "
+                  f"AND UserId = '{user_id}' AND RetentionDate IS NULL")
+    c.eq("viewer's rows on the film keep the newer state",
+         sorted((r["CustomDataKey"], r["PlaybackPositionTicks"], r["IsFavorite"]) for r in rows),
+         [(k, 6000000000, 1) for k in keys])
+    left = jf.sql(f"SELECT CustomDataKey FROM UserData WHERE RetentionDate IS NOT NULL AND CustomDataKey IN ({quoted})")
+    c.eq("rows still parked for those keys", len(left), 0)
+    jf.resume()
+
+
 SCENARIOS = {
     "initiald": sc_initiald,
     "sharedtmdb": sc_sharedtmdb,
@@ -362,6 +430,7 @@ SCENARIOS = {
     "sharedepisodes": sc_sharedepisodes,
     "comeback": sc_comeback,
     "blackclover": sc_blackclover,
+    "reattach": sc_reattach,
 }
 
 
