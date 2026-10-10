@@ -557,6 +557,146 @@ public sealed class GelatoManager(
     /// by a native id and that IMDb id changed. The old one is kept as an alias (see
     /// <see cref="CatalogIdentity"/>). Items identified by their IMDb id are never re-keyed.
     /// </summary>
+    /// <summary>Whether the anime mapping links this catalogue entry to a season of a show.</summary>
+    public async Task<bool> IsMappedSeasonAsync(PluginConfiguration cfg, StremioMeta meta, CancellationToken ct)
+    {
+        if (!cfg.FileSplitSeasons || meta.Type != StremioMediaType.Series)
+            return false;
+        try
+        {
+            var folder = Path.Combine(appPaths.DataPath, "gelato");
+            var map = await AnimeSeasonMapStore.GetAsync(cfg.AnimeMappingUrl, folder, _log, ct).ConfigureAwait(false);
+            return map?.Find(meta.Id) is { Season: > 0 };
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _log.LogDebug(ex, "Anime mapping lookup failed for {Id}", meta.Id);
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Files an anime catalogue entry that the mapping list names as a season of a show in the
+    /// library as that season of the show. Returns the show, or null to import the entry as its
+    /// own show (no confident mapping, setting off, or the entry is already in the library).
+    /// </summary>
+    public async Task<Series?> TryPlaceSplitSeasonAsync(
+        PluginConfiguration cfg,
+        StremioMeta meta,
+        CancellationToken ct
+    )
+    {
+        if (!cfg.FileSplitSeasons || meta.Type != StremioMediaType.Series || cfg.Stremio is not { } stremio)
+            return null;
+        if (cfg.SeriesFolder is null)
+            return null;
+        try
+        {
+            var folder = Path.Combine(appPaths.DataPath, "gelato");
+            var map = await AnimeSeasonMapStore.GetAsync(cfg.AnimeMappingUrl, folder, _log, ct).ConfigureAwait(false);
+            if (map?.Find(meta.Id) is not { } link)
+                return null;
+
+            // Already in the library as its own show: leave it (existing split shows are moved
+            // by an admin-confirmed step, not here).
+            // Matched on its own catalogue id only: its other ids (a TVDB id copied from the
+            // show) would find the show itself.
+            if (
+                libraryManager
+                    .GetItemList(
+                        new InternalItemsQuery
+                        {
+                            IncludeItemTypes = [BaseItemKind.Series],
+                            HasAnyProviderId = new Dictionary<string, string> { ["Stremio"] = meta.Id },
+                        }
+                    )
+                    .Any()
+            )
+                return null;
+
+            var tvdb = link.TvdbId.ToString(CultureInfo.InvariantCulture);
+            List<Series> SeriesWith(string provider, string value) =>
+                libraryManager
+                    .GetItemList(
+                        new InternalItemsQuery
+                        {
+                            IncludeItemTypes = [BaseItemKind.Series],
+                            HasAnyProviderId = new Dictionary<string, string> { [provider] = value },
+                        }
+                    )
+                    .OfType<Series>()
+                    .Where(s => string.Equals(s.GetProviderId(provider), value, StringComparison.OrdinalIgnoreCase))
+                    .Where(s => !string.Equals(s.GetProviderId("Stremio"), meta.Id, StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+
+            // The show by its TVDB id; a show that has none stored yet by the IMDb id the list
+            // gives for the same TVDB series.
+            var parents = SeriesWith("Tvdb", tvdb);
+            if (parents.Count == 0)
+                parents = link.Imdb.SelectMany(i => SeriesWith("Imdb", i)).DistinctBy(s => s.Id).ToList();
+            if (parents.Count != 1)
+                return null;
+            var parent = parents[0];
+
+            var full = await stremio.GetMetaAsync(meta).ConfigureAwait(false);
+            var videos = (full?.Videos ?? [])
+                .Where(v => v.Season is > 0 && (v.Episode ?? v.Number).HasValue)
+                .ToList();
+            var entrySeasons = videos.Select(v => v.Season!.Value).Distinct().ToList();
+            var entryPaths = videos.Select(v => $"gelato://stub/{v.Id}").ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            var inSeason = libraryManager
+                .GetItemList(
+                    new InternalItemsQuery
+                    {
+                        AncestorIds = [parent.Id],
+                        IncludeItemTypes = [BaseItemKind.Episode],
+                        Recursive = true,
+                    }
+                )
+                .OfType<Episode>()
+                .Where(e => !e.IsStream() && e.ParentIndexNumber == link.Season)
+                .ToList();
+            var fromEntry = inSeason.Count(e => e.Path is { } p && entryPaths.Contains(p));
+
+            var decision = SplitSeason.Decide(link, parents.Count, entrySeasons, inSeason.Count, fromEntry);
+            if (decision == SplitSeason.Decision.OwnShow)
+                return null;
+
+            if (decision == SplitSeason.Decision.File)
+            {
+                var copy = full!.ShallowCopy();
+                copy.Videos = videos
+                    .Select(v =>
+                    {
+                        var c = v.ShallowCopy();
+                        c.Season = link.Season;
+                        return c;
+                    })
+                    .ToList();
+                await SyncSeriesTreesAsync(cfg, copy, ct, existingSeries: parent).ConfigureAwait(false);
+            }
+
+            _log.LogInformation(
+                "{Entry} ({Id}) placed as season {Season} of {Parent} ({ParentId}){Note}",
+                meta.Name,
+                meta.Id,
+                link.Season,
+                parent.Name,
+                parent.Id,
+                decision == SplitSeason.Decision.File
+                    ? $", {videos.Count} episode(s) filed"
+                    : ", the show has that season already"
+            );
+            return parent;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _log.LogWarning(ex, "Could not place {Name} ({Id}) as a season; importing it as its own show", meta.Name, meta.Id);
+            return null;
+        }
+    }
+
     /// <summary>
     /// Keeps a series' status in step with the add-on. It used to be set once when the series was
     /// created, so a show that came back (Ended, now Continuing) was never picked up by the tree

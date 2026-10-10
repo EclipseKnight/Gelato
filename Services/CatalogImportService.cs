@@ -76,6 +76,104 @@ public class CatalogImportService(
             // keyed on stremio meta.Id to deduplicate within the import run
             var importedIds = new ConcurrentDictionary<string, Guid>(StringComparer.OrdinalIgnoreCase);
 
+            var deferred = new ConcurrentBag<StremioMeta>();
+
+            async Task ImportOne(StremioMeta meta, CancellationToken innerCt, bool deferMapped)
+            {
+                if (deferMapped && !importedIds.TryAdd(meta.Id, Guid.Empty))
+                {
+                    Interlocked.Increment(ref skipped);
+                    Interlocked.Increment(ref processedItems);
+                    return;
+                }
+
+                var mediaType = meta.Type;
+                var baseItemKind = mediaType.ToBaseItem();
+
+                // A season the anime mapping links to another show waits until the rest of the
+                // catalog is in, so the show it belongs to exists when it is placed.
+                if (
+                    deferMapped
+                    && baseItemKind == BaseItemKind.Series
+                    && await manager.IsMappedSeasonAsync(cfg, meta, innerCt).ConfigureAwait(false)
+                )
+                {
+                    deferred.Add(meta);
+                    Interlocked.Increment(ref processedItems);
+                    return;
+                }
+
+                // catalog can contain multiple types.
+                var root = baseItemKind switch
+                {
+                    BaseItemKind.Series => seriesFolder,
+                    BaseItemKind.Movie => movieFolder,
+                    _ => null,
+                };
+
+                if (root is not null)
+                {
+                    try
+                    {
+                        if (
+                            baseItemKind == BaseItemKind.Series
+                            && await manager
+                                .TryPlaceSplitSeasonAsync(cfg, meta, innerCt)
+                                .ConfigureAwait(false)
+                                is { } parent
+                        )
+                        {
+                            importedIds[meta.Id] = parent.Id;
+                            Interlocked.Increment(ref existing);
+                            Interlocked.Increment(ref processedItems);
+                            return;
+                        }
+
+                        var (item, isNew) = await manager
+                            .InsertMeta(
+                                root,
+                                meta,
+                                null,
+                                true,
+                                true,
+                                baseItemKind == BaseItemKind.Series,
+                                innerCt
+                            )
+                            .ConfigureAwait(false);
+
+                        if (item != null)
+                        {
+                            importedIds[meta.Id] = item.Id;
+                            Interlocked.Increment(
+                                ref isNew ? ref created : ref existing
+                            );
+                        }
+                        else
+                        {
+                            Interlocked.Increment(ref failed);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Interlocked.Increment(ref failed);
+                        logger.LogError(
+                            "{CatId}: insert meta failed for {Id}. Exception: {Message}\n{StackTrace}",
+                            catalogId,
+                            meta.Id,
+                            ex.Message,
+                            ex.StackTrace
+                        );
+                    }
+                }
+                else
+                {
+                    Interlocked.Increment(ref skipped);
+                }
+
+                var done = Interlocked.Increment(ref processedItems);
+                progress?.Report(done * 100.0 / maxItems);
+            }
+
             while (processedItems < maxItems)
             {
                 ct.ThrowIfCancellationRequested();
@@ -100,79 +198,19 @@ public class CatalogImportService(
                             MaxDegreeOfParallelism = 4,
                             CancellationToken = ct,
                         },
-                        async (meta, innerCt) =>
-                        {
-                            if (!importedIds.TryAdd(meta.Id, Guid.Empty))
-                            {
-                                Interlocked.Increment(ref skipped);
-                                Interlocked.Increment(ref processedItems);
-                                return;
-                            }
-
-                            var mediaType = meta.Type;
-                            var baseItemKind = mediaType.ToBaseItem();
-
-                            // catalog can contain multiple types.
-                            var root = baseItemKind switch
-                            {
-                                BaseItemKind.Series => seriesFolder,
-                                BaseItemKind.Movie => movieFolder,
-                                _ => null,
-                            };
-
-                            if (root is not null)
-                            {
-                                try
-                                {
-                                    var (item, isNew) = await manager
-                                        .InsertMeta(
-                                            root,
-                                            meta,
-                                            null,
-                                            true,
-                                            true,
-                                            baseItemKind == BaseItemKind.Series,
-                                            innerCt
-                                        )
-                                        .ConfigureAwait(false);
-
-                                    if (item != null)
-                                    {
-                                        importedIds[meta.Id] = item.Id;
-                                        Interlocked.Increment(
-                                            ref isNew ? ref created : ref existing
-                                        );
-                                    }
-                                    else
-                                    {
-                                        Interlocked.Increment(ref failed);
-                                    }
-                                }
-                                catch (Exception ex)
-                                {
-                                    Interlocked.Increment(ref failed);
-                                    logger.LogError(
-                                        "{CatId}: insert meta failed for {Id}. Exception: {Message}\n{StackTrace}",
-                                        catalogId,
-                                        meta.Id,
-                                        ex.Message,
-                                        ex.StackTrace
-                                    );
-                                }
-                            }
-                            else
-                            {
-                                Interlocked.Increment(ref skipped);
-                            }
-
-                            var done = Interlocked.Increment(ref processedItems);
-                            progress?.Report(done * 100.0 / maxItems);
-                        }
+                        (meta, innerCt) => new ValueTask(ImportOne(meta, innerCt, true))
                     )
                     .ConfigureAwait(false);
 
                 skip += page.Count;
             }
+
+            foreach (var meta in deferred)
+            {
+                await ImportOne(meta, ct, false).ConfigureAwait(false);
+            }
+            // Counted once when they were put aside, and once more when imported.
+            processedItems -= deferred.Count;
 
             if (catalogCfg.CreateCollection)
             {

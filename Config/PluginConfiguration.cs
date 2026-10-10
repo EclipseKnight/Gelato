@@ -40,6 +40,16 @@ public class PluginConfiguration : BasePluginConfiguration
     /// </summary>
     public int FullSeriesSyncDays { get; set; } = 7;
 
+    /// <summary>
+    /// File an anime catalogue entry that is a season of a show in the library ("Black Clover
+    /// Season 2") as that season of the show, instead of importing it as a show of its own.
+    /// </summary>
+    public bool FileSplitSeasons { get; set; } = true;
+
+    /// <summary>The anime id mapping list (Fribb/anime-lists format) used for that.</summary>
+    public string AnimeMappingUrl { get; set; } =
+        "https://raw.githubusercontent.com/Fribb/anime-lists/master/anime-list-full.json";
+
     /// <summary>When the last such pass finished (UTC). Set by the tree sync.</summary>
     public DateTime? LastFullSeriesSync { get; set; }
     public bool FilterUnreleased { get; set; } = false;

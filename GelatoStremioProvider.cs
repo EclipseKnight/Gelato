@@ -993,6 +993,9 @@ public class StremioMeta
     /// it only can be guessed (single year, first episode date), so a stored status is never
     /// changed on a guess.
     /// </summary>
+    /// <summary>A copy whose own fields can be changed without touching this one.</summary>
+    public StremioMeta ShallowCopy() => (StremioMeta)MemberwiseClone();
+
     public StremioStatus? GetStatedStatus()
     {
         if (Status is not null and not StremioStatus.Unknown)

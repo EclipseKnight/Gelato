@@ -1,0 +1,25 @@
+{
+ "meta": {
+  "id": "mal:70002",
+  "type": "series",
+  "name": "Partwise Part 2",
+  "releaseInfo": "2020-2020",
+  "status": "Ended",
+  "videos": [
+   {
+    "id": "mal:70002:1",
+    "title": "Episode 1",
+    "season": 1,
+    "episode": 1,
+    "released": "2020-01-01T00:00:00.000Z"
+   },
+   {
+    "id": "mal:70002:2",
+    "title": "Episode 2",
+    "season": 1,
+    "episode": 2,
+    "released": "2020-01-02T00:00:00.000Z"
+   }
+  ]
+ }
+}

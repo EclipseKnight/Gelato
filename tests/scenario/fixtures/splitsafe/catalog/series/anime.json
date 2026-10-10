@@ -1,0 +1,26 @@
+{
+ "metas": [
+  {
+   "id": "mal:70001",
+   "type": "series",
+   "name": "Orphan Season 2",
+   "releaseInfo": "2020-2020",
+   "status": "Ended"
+  },
+  {
+   "id": "tt0000502",
+   "type": "series",
+   "name": "Partwise",
+   "releaseInfo": "2020-2020",
+   "status": "Ended",
+   "_tvdbId": "900002"
+  },
+  {
+   "id": "mal:70002",
+   "type": "series",
+   "name": "Partwise Part 2",
+   "releaseInfo": "2020-2020",
+   "status": "Ended"
+  }
+ ]
+}
