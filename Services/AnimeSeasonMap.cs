@@ -102,6 +102,25 @@ public sealed class AnimeSeasonMap
 /// <summary>What to do with an anime catalogue entry the mapping names as a season of a show.</summary>
 public static class SplitSeason
 {
+    /// <summary>
+    /// True when a Gelato episode path comes from another anime catalogue entry than
+    /// <paramref name="syncingId"/>, i.e. it was filed into this show as a split season.
+    /// Native ids never change, so a show's own re-keyed IMDb episodes do not count.
+    /// </summary>
+    public static bool IsFiledFromOtherEntry(string? path, string syncingId)
+    {
+        const string Stub = "gelato://stub/";
+        if (path is null || !path.StartsWith(Stub, StringComparison.OrdinalIgnoreCase))
+            return false;
+        var id = path[Stub.Length..];
+        var native =
+            id.StartsWith("mal:", StringComparison.OrdinalIgnoreCase)
+            || id.StartsWith("kitsu:", StringComparison.OrdinalIgnoreCase)
+            || id.StartsWith("anilist:", StringComparison.OrdinalIgnoreCase)
+            || id.StartsWith("anidb:", StringComparison.OrdinalIgnoreCase);
+        return native && !id.StartsWith(syncingId + ":", StringComparison.OrdinalIgnoreCase);
+    }
+
     public enum Decision
     {
         /// <summary>Import as its own show, as before.</summary>

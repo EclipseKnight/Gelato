@@ -1,0 +1,34 @@
+{
+ "meta": {
+  "id": "tt7441658",
+  "type": "series",
+  "name": "Black Clover",
+  "releaseInfo": "2020",
+  "year": 2020,
+  "status": "Ended",
+  "videos": [
+   {
+    "id": "tt7441658:1:1",
+    "title": "Episode 1",
+    "season": 1,
+    "episode": 1,
+    "released": "2020-01-01T00:00:00.000Z"
+   },
+   {
+    "id": "tt7441658:1:2",
+    "title": "Episode 2",
+    "season": 1,
+    "episode": 2,
+    "released": "2020-01-02T00:00:00.000Z"
+   },
+   {
+    "id": "tt7441658:1:3",
+    "title": "Episode 3",
+    "season": 1,
+    "episode": 3,
+    "released": "2020-01-03T00:00:00.000Z"
+   }
+  ],
+  "_tvdbId": "331753"
+ }
+}

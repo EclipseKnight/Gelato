@@ -1,0 +1,22 @@
+{
+ "metas": [
+  {
+   "id": "tt7441658",
+   "type": "series",
+   "name": "Black Clover",
+   "releaseInfo": "2020",
+   "year": 2020,
+   "status": "Continuing",
+   "_tvdbId": "331753"
+  },
+  {
+   "id": "mal:61967",
+   "type": "series",
+   "name": "Black Clover Season 2",
+   "releaseInfo": "2020",
+   "year": 2020,
+   "status": "Ended",
+   "_tvdbId": "331753"
+  }
+ ]
+}
