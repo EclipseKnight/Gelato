@@ -25,7 +25,6 @@ AUTH = 'MediaBrowser Client="gelato-scenario", Device="runner", DeviceId="gelato
 # Scenarios that fail on purpose until the fix named here lands. A known failure doesn't fail
 # the run; a known failure that passes is reported so its entry can be removed.
 KNOWN = {
-    "onepiece": "IMDb id change creates a second series (fix: identify items by native id)",
     "comeback": "an Ended series is never re-synced (fix: keep series status current)",
     "reattach": "a collision on reattach leaves the older row parked (fix: merge colliding watch-state rows)",
     "blackclover": "a season listed as its own entry becomes its own series (fix: file split seasons)",
@@ -287,7 +286,12 @@ def sc_onepiece(jf, addon, c):
         jf.mark_played(jf.viewer, first["Id"])
     addon.stage = os.path.join(FIXTURES, "onepiece", "import2")
     import_all(jf)
-    c.eq("series after the IMDb id changed", len(jf.items("Series")), 1)
+    series = jf.items("Series")
+    c.eq("series after the IMDb id changed", len(series), 1)
+    if series:
+        ids = {k.lower(): v for k, v in series[0].get("ProviderIds", {}).items()}
+        c.eq("series takes the new IMDb id", ids.get("imdb"), "tt11737520")
+        c.eq("old IMDb id kept as an alias", ids.get("gelatoimdbalias0"), "tt0388629")
     eps = jf.items("Episode")
     c.eq("episodes after the IMDb id changed", len(eps), 3)
     played = [e for e in eps if jf.played(jf.viewer, e["Id"])]
@@ -420,6 +424,30 @@ def sc_reattach(jf, addon, c):
     jf.resume()
 
 
+def sc_aliasclash(jf, addon, c):
+    """An old IMDb id kept as an alias turns up as another show's id."""
+    addon.stage = os.path.join(FIXTURES, "aliasclash", "import1")
+    import_all(jf)
+    addon.stage = os.path.join(FIXTURES, "aliasclash", "import2")
+    import_all(jf)
+    # Days later in real life: restart so Gelato's 5-minute meta cache doesn't answer for the old id.
+    jf.restart(); jf.login()
+    addon.stage = os.path.join(FIXTURES, "aliasclash", "import3")
+    import_all(jf)
+    series = by_name(jf.items("Series"))
+    c.eq("both shows exist", sorted(series), ["Another Show", "One Piece"])
+    ids = lambda s: {k.lower(): v for k, v in s.get("ProviderIds", {}).items()}
+    if "One Piece" in series:
+        op = ids(series["One Piece"][0])
+        c.eq("One Piece keeps its own id", op.get("imdb"), "tt11737520")
+        c.true("alias removed from One Piece", "tt0388629" not in [v for k, v in op.items() if k.startswith("gelatoimdbalias") and "seen" not in k])
+    if "Another Show" in series:
+        c.eq("new show has the id", ids(series["Another Show"][0]).get("imdb"), "tt0388629")
+        n = len([e for e in jf.items("Episode") if e.get("SeriesId") == series["Another Show"][0]["Id"]])
+        c.eq("new show's episodes", n, 2)
+    repeat_check(jf, c)
+
+
 SCENARIOS = {
     "initiald": sc_initiald,
     "sharedtmdb": sc_sharedtmdb,
@@ -430,6 +458,7 @@ SCENARIOS = {
     "comeback": sc_comeback,
     "blackclover": sc_blackclover,
     "reattach": sc_reattach,
+    "aliasclash": sc_aliasclash,
 }
 
 

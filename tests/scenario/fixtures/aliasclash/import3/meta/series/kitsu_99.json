@@ -1,0 +1,27 @@
+{
+ "meta": {
+  "id": "kitsu:99",
+  "type": "series",
+  "name": "Another Show",
+  "releaseInfo": "2020",
+  "year": 2020,
+  "status": "Ended",
+  "imdb_id": "tt0388629",
+  "videos": [
+   {
+    "id": "kitsu:99:1",
+    "title": "Episode 1",
+    "season": 1,
+    "episode": 1,
+    "released": "2020-01-01T00:00:00.000Z"
+   },
+   {
+    "id": "kitsu:99:2",
+    "title": "Episode 2",
+    "season": 1,
+    "episode": 2,
+    "released": "2020-01-02T00:00:00.000Z"
+   }
+  ]
+ }
+}
