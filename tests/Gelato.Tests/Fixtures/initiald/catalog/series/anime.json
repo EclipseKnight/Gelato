@@ -1,0 +1,34 @@
+{
+ "metas": [
+  {
+   "id": "kitsu:185",
+   "type": "series",
+   "name": "Initial D Stage 1",
+   "_tvdbId": "72025"
+  },
+  {
+   "id": "kitsu:186",
+   "type": "series",
+   "name": "Initial D Stage 2",
+   "_tvdbId": "72025"
+  },
+  {
+   "id": "kitsu:187",
+   "type": "series",
+   "name": "Initial D Stage 3",
+   "_tvdbId": "72025"
+  },
+  {
+   "id": "kitsu:188",
+   "type": "series",
+   "name": "Initial D Stage 4",
+   "_tvdbId": "72025"
+  },
+  {
+   "id": "kitsu:189",
+   "type": "series",
+   "name": "Initial D Stage 5",
+   "_tvdbId": "72025"
+  }
+ ]
+}
