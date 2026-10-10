@@ -791,6 +791,17 @@ public sealed class GelatoManager(
             return 0;
         }
 
+        if (video is Episode && AirDate.NotYetAired(video.PremiereDate, DateTime.UtcNow))
+        {
+            _log.LogDebug(
+                "SyncStreams: {Name} ({Id}) airs {Date:u}, not looking up streams yet",
+                video.Name,
+                video.Id,
+                video.PremiereDate
+            );
+            return 0;
+        }
+
         var isEpisode = video is Episode;
         var parent = isEpisode ? video.GetParent() as Folder : TryGetMovieFolder(userId);
         if (parent is null)

@@ -1,0 +1,26 @@
+{
+ "meta": {
+  "id": "tt0000401",
+  "type": "series",
+  "name": "Lumen",
+  "releaseInfo": "2020-",
+  "status": "Continuing",
+  "poster": "",
+  "videos": [
+   {
+    "id": "tt0000401:1:1",
+    "title": "Aired",
+    "season": 1,
+    "episode": 1,
+    "released": "2020-01-01T00:00:00.000Z"
+   },
+   {
+    "id": "tt0000401:1:2",
+    "title": "Not aired",
+    "season": 1,
+    "episode": 2,
+    "released": "2099-01-01T00:00:00.000Z"
+   }
+  ]
+ }
+}
