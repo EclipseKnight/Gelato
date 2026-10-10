@@ -41,6 +41,7 @@ public sealed partial class RepairWatchStateTask(
     ILibraryManager libraryManager,
     IItemPersistenceService persistence,
     IDbContextFactory<JellyfinDbContext> dbFactory,
+    Gelato.Services.WatchStateMerge watchStateMerge,
     GelatoManager manager
 ) : IScheduledTask
 {
@@ -228,26 +229,17 @@ public sealed partial class RepairWatchStateTask(
                         held.Exists(h => h.UserId == w.user && h.CustomDataKey == w.key)
                     );
 
+                    if (colliding > 0)
+                    {
+                        // Settle the collisions (newer play wins), then reattach whatever is left.
+                        await watchStateMerge
+                            .SettleCollisionsAsync(item.Id, item.GetUserDataKeys(), ct)
+                            .ConfigureAwait(false);
+                    }
+
                     if (colliding == waiting.Count)
                     {
-                        // What is on the item is newer than the parked row, so leaving it is right.
-                        log.LogDebug(
-                            "RepairWatchState: {Name} ({Id}) already holds the {Rows} parked row(s), leaving them",
-                            item.Name,
-                            item.Id,
-                            waiting.Count
-                        );
                         alreadyHeld++;
-                    }
-                    else if (colliding > 0)
-                    {
-                        log.LogWarning(
-                            "RepairWatchState: cannot reattach {Name} ({Id}): {Colliding} of {Rows} parked row(s) collide with rows the item already holds, and Jellyfin reattaches all or nothing",
-                            item.Name,
-                            item.Id,
-                            colliding,
-                            waiting.Count
-                        );
                     }
                     else
                     {

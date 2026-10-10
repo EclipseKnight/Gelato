@@ -35,7 +35,8 @@ public sealed class GelatoManager(
     IUserManager userManager,
     IUserDataManager userDataManager,
     RemuxDbService remuxDb,
-    ItemIdLookup idLookup
+    ItemIdLookup idLookup,
+    WatchStateMerge watchStateMerge
 )
 {
     public const string StreamTag = "gelato-stream";
@@ -2718,6 +2719,11 @@ public sealed class GelatoManager(
 
             try
             {
+                // Rows the item already holds for a parked key: newer play wins, then the rest
+                // reattaches (Jellyfin's reattach fails the whole item on one collision).
+                await watchStateMerge
+                    .SettleCollisionsAsync(item.Id, item.GetUserDataKeys(), ct)
+                    .ConfigureAwait(false);
                 await persistence.ReattachUserDataAsync(item, ct).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
@@ -2726,9 +2732,7 @@ public sealed class GelatoManager(
             }
             catch (Exception ex)
             {
-                // Jellyfin does not resolve key collisions here, so if the item already holds a row
-                // for one of these keys the update violates the primary key. That row is newer than
-                // anything on the placeholder, so leaving it untouched is the right outcome.
+                // Collisions are settled above; anything left is a real failure.
                 _log.LogWarning(
                     ex,
                     "Could not reattach watch state for {Name} ({Id})",
