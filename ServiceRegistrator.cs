@@ -43,6 +43,7 @@ public class ServiceRegistrator : IPluginServiceRegistrator
         services.AddSingleton<UnreleasedListingFilter>();
         services.AddSingleton<MediaSegmentFilter>();
         services.AddSingleton<ItemIdLookup>();
+        services.AddSingleton<WatchStateMerge>();
         services.AddSingleton<GelatoManager>();
         services.DecorateSingle<IItemRepository, GelatoItemRepository>();
         services.AddSingleton(sp => (GelatoItemRepository)sp.GetRequiredService<IItemRepository>());

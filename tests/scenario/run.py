@@ -24,9 +24,7 @@ AUTH = 'MediaBrowser Client="gelato-scenario", Device="runner", DeviceId="gelato
 
 # Scenarios that fail on purpose until the fix named here lands. A known failure doesn't fail
 # the run; a known failure that passes is reported so its entry can be removed.
-KNOWN = {
-    "reattach": "a collision on reattach leaves the older row parked (fix: merge colliding watch-state rows)",
-}
+KNOWN = {}
 
 
 # ---------- fake add-on ----------
