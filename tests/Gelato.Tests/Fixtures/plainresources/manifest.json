@@ -1,0 +1,9 @@
+{
+ "id": "com.aiostreams.viren070",
+ "name": "AIOStreams",
+ "version": "1.0.0",
+ "types": ["movie", "series"],
+ "idPrefixes": ["tt"],
+ "resources": ["catalog", {"name": "meta", "types": ["series"], "idPrefixes": ["tt", "kitsu"]}, "stream"],
+ "catalogs": [{"type": "series", "id": "anime", "name": "Anime"}]
+}

@@ -12,4 +12,5 @@ file at the same path, so `/meta/series/kitsu:12.json` is `<scenario>/meta/serie
 | `blackclover` | A season listed as its own entry (`mal:61967`), same TVDB id as the show |
 | `comeback` | An Ended show that comes back with a new season |
 | `sharedepisodes` | Two entries claiming the same episodes |
+| `plainresources` | A manifest listing resources as plain names next to an object |
 | `streams` | Streams found, zero streams, broken JSON; delays and failures are set per test |

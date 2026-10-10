@@ -650,6 +650,12 @@ public class StremioExtra
     public List<string> Options { get; set; } = new();
 }
 
+/// <summary>
+/// A resource the addon serves. The protocol allows the short form, a plain name
+/// (<c>"meta"</c>), for a resource that covers all the manifest's types and ids: it reads as a
+/// resource with no types and no id prefixes, which every check here takes as "any".
+/// </summary>
+[JsonConverter(typeof(StremioResourceConverter))]
 public class StremioResource
 {
     public string Name { get; set; } = "";
@@ -1719,5 +1725,58 @@ public sealed class StringOrArrayConverter : JsonConverter<string?>
             w.WriteStringValue(v);
         else
             w.WriteNullValue();
+    }
+}
+
+/// <summary>Reads a manifest resource in either form: a plain name or an object.</summary>
+public sealed class StremioResourceConverter : JsonConverter<StremioResource>
+{
+    public override StremioResource? Read(ref Utf8JsonReader r, Type t, JsonSerializerOptions o)
+    {
+        switch (r.TokenType)
+        {
+            case JsonTokenType.String:
+                return new StremioResource { Name = r.GetString() ?? "" };
+            case JsonTokenType.StartObject:
+                var res = new StremioResource();
+                using (var doc = JsonDocument.ParseValue(ref r))
+                {
+                    foreach (var prop in doc.RootElement.EnumerateObject())
+                    {
+                        if (Is(prop, "name") && prop.Value.ValueKind == JsonValueKind.String)
+                            res.Name = prop.Value.GetString() ?? "";
+                        else if (Is(prop, "types"))
+                            res.Types = Strings(prop.Value);
+                        else if (Is(prop, "idPrefixes"))
+                            res.IdPrefixes = Strings(prop.Value);
+                    }
+                }
+                return res;
+            default:
+                r.Skip();
+                return null;
+        }
+    }
+
+    private static bool Is(JsonProperty p, string name) =>
+        string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase);
+
+    private static List<string> Strings(JsonElement e) =>
+        e.ValueKind == JsonValueKind.Array
+            ? e.EnumerateArray()
+                .Where(x => x.ValueKind == JsonValueKind.String)
+                .Select(x => x.GetString()!)
+                .ToList()
+            : [];
+
+    public override void Write(Utf8JsonWriter w, StremioResource v, JsonSerializerOptions o)
+    {
+        w.WriteStartObject();
+        w.WriteString("name", v.Name);
+        w.WritePropertyName("types");
+        JsonSerializer.Serialize(w, v.Types, o);
+        w.WritePropertyName("idPrefixes");
+        JsonSerializer.Serialize(w, v.IdPrefixes, o);
+        w.WriteEndObject();
     }
 }
