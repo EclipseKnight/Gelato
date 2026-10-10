@@ -391,6 +391,7 @@ public sealed class GelatoManager(
                     existing.Name
                 );
                 await ReconcileIdentityAsync(existing, meta, ct).ConfigureAwait(false);
+                await RefreshStatusAsync(existing, meta, ct).ConfigureAwait(false);
                 return (existing, false);
             }
 
@@ -437,6 +438,7 @@ public sealed class GelatoManager(
                 existing.Name
             );
             await ReconcileIdentityAsync(existing, meta, ct).ConfigureAwait(false);
+            await RefreshStatusAsync(existing, meta, ct).ConfigureAwait(false);
             return (existing, false);
         }
 
@@ -555,6 +557,36 @@ public sealed class GelatoManager(
     /// by a native id and that IMDb id changed. The old one is kept as an alias (see
     /// <see cref="CatalogIdentity"/>). Items identified by their IMDb id are never re-keyed.
     /// </summary>
+    /// <summary>
+    /// Keeps a series' status in step with the add-on. It used to be set once when the series was
+    /// created, so a show that came back (Ended, now Continuing) was never picked up by the tree
+    /// sync and never got its new seasons.
+    /// </summary>
+    private async Task RefreshStatusAsync(BaseItem existing, StremioMeta meta, CancellationToken ct)
+    {
+        if (existing is not Series series)
+            return;
+        try
+        {
+            if (SeriesStatusMap.Changed(series.Status, meta.GetStatedStatus()) is not { } next)
+                return;
+            var old = series.Status;
+            series.Status = next;
+            await series.UpdateToRepositoryAsync(ItemUpdateType.MetadataEdit, ct).ConfigureAwait(false);
+            _log.LogInformation(
+                "{Name} ({Id}): status changed from {Old} to {New}",
+                series.Name,
+                series.Id,
+                old?.ToString() ?? "none",
+                next
+            );
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _log.LogWarning(ex, "Could not update the status of {Name} ({Id})", series.Name, series.Id);
+        }
+    }
+
     private async Task ReconcileIdentityAsync(BaseItem existing, StremioMeta meta, CancellationToken ct)
     {
         try
@@ -1584,6 +1616,7 @@ public sealed class GelatoManager(
             {
                 series = found;
                 await ReconcileIdentityAsync(series, seriesMeta, ct).ConfigureAwait(false);
+                await RefreshStatusAsync(series, seriesMeta, ct).ConfigureAwait(false);
             }
         }
 
@@ -2280,6 +2313,31 @@ public sealed class GelatoManager(
 
         var continuingSeries = continuingGelatoSeries.Concat(continuingLocalSeries).ToList();
 
+        // Once a week also check the Gelato series that are not continuing, so a show the add-on
+        // now lists as continuing again gets its status and its new seasons.
+        var now = DateTime.UtcNow;
+        var fullPass = SeriesStatusMap.FullPassDue(cfg.LastFullSeriesSync, now, cfg.FullSeriesSyncDays);
+        if (fullPass)
+        {
+            var seen = continuingSeries.Select(s => s.Id).ToHashSet();
+            var others = libraryManager
+                .GetItemList(
+                    new InternalItemsQuery
+                    {
+                        IncludeItemTypes = [BaseItemKind.Series],
+                        HasAnyProviderId = gelatoProviders,
+                    }
+                )
+                .OfType<Series>()
+                .Where(s => !seen.Contains(s.Id))
+                .ToList();
+            _log.LogInformation(
+                "SyncSeriesTrees: weekly pass, also checking {Count} series that are not continuing.",
+                others.Count
+            );
+            continuingSeries.AddRange(others);
+        }
+
         var total = continuingSeries.Count;
         var i = 0;
         var failed = 0;
@@ -2296,7 +2354,7 @@ public sealed class GelatoManager(
             {
                 try
                 {
-                    var meta = await stremio.GetMetaAsync(series).ConfigureAwait(false);
+                    var meta = await stremio.GetMetaAsync(series, fresh: true).ConfigureAwait(false);
                     if (meta is null)
                         Interlocked.Increment(ref noMeta);
                     else
@@ -2328,6 +2386,13 @@ public sealed class GelatoManager(
                 }
             }
         );
+
+        if (fullPass && !cancellationToken.IsCancellationRequested)
+        {
+            var plugin = GelatoPlugin.Instance!;
+            plugin.Configuration.LastFullSeriesSync = now;
+            plugin.SaveConfiguration();
+        }
 
         _log.LogInformation(
             "SyncSeriesTrees: continuing series synced: {SeriesCount}, no meta: {NoMeta}, failed: {Failed}.",
@@ -2387,7 +2452,7 @@ public sealed class GelatoManager(
             ct.ThrowIfCancellationRequested();
             try
             {
-                var meta = await stremio.GetMetaAsync(series).ConfigureAwait(false);
+                var meta = await stremio.GetMetaAsync(series, fresh: true).ConfigureAwait(false);
                 if (meta is not null)
                 {
                     await SyncSeriesTreesAsync(cfg, meta, ct, existingSeries: series)
@@ -2908,13 +2973,7 @@ public sealed class GelatoManager(
 
         if (item is Series series)
         {
-            series.Status = meta.GetStatus() switch
-            {
-                StremioStatus.Continuing => SeriesStatus.Continuing,
-                StremioStatus.Ended => SeriesStatus.Ended,
-                StremioStatus.Upcoming => SeriesStatus.Unreleased,
-                _ => null,
-            };
+            series.Status = SeriesStatusMap.ToJellyfin(meta.GetStatus());
         }
 
         item.IsVirtualItem = false;
