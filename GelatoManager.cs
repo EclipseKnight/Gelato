@@ -329,17 +329,30 @@ public sealed class GelatoManager(
             IsDeadPerson = true, // skip filter marker
         };
 
+        static bool NotStream(BaseItem? x) =>
+            x switch
+            {
+                null => false,
+                Video v => !v.IsStream(),
+                _ => true,
+            };
+
+        var found = libraryManager.GetItemList(query).FirstOrDefault(NotStream);
+        if (found is not null)
+            return found;
+
+        // Nothing under the native id: the title may be in the library from a catalogue without
+        // native ids (Cinemeta), by its IMDb id only.
+        if (
+            CatalogIdentity.NativeId(item.ProviderIds) is not { } native
+            || item.GetProviderId(MetadataProvider.Imdb) is not { Length: > 0 } imdb
+        )
+            return null;
+        query.HasAnyProviderId = new Dictionary<string, string> { [nameof(MetadataProvider.Imdb)] = imdb };
         return libraryManager
             .GetItemList(query)
-            .FirstOrDefault(x =>
-            {
-                return x switch
-                {
-                    null => false,
-                    Video v => !v.IsStream(),
-                    _ => true,
-                };
-            });
+            .Where(NotStream)
+            .FirstOrDefault(x => CatalogIdentity.ImdbMatchIsSame(x.ProviderIds, native));
     }
 
     /// <summary>
@@ -735,6 +748,24 @@ public sealed class GelatoManager(
                 return;
             if (CatalogIdentity.NativeId(incoming.ProviderIds) is not { } native)
                 return;
+
+            // Found by its IMDb id and carrying no native id yet (added from a catalogue without
+            // one): take the native id, so the next lookup finds it by that.
+            if (CatalogIdentity.NativeId(existing.ProviderIds) is null)
+            {
+                existing.SetProviderId(native.Key, native.Value);
+                await existing
+                    .UpdateToRepositoryAsync(ItemUpdateType.MetadataEdit, ct)
+                    .ConfigureAwait(false);
+                _log.LogInformation(
+                    "{Name} ({Id}): found by its IMDb id, now also identified by {Native} {NativeId}",
+                    existing.Name,
+                    existing.Id,
+                    native.Key,
+                    native.Value
+                );
+            }
+
             if (
                 !string.Equals(
                     existing.GetProviderId(native.Key),
@@ -748,6 +779,46 @@ public sealed class GelatoManager(
             var newImdb = incoming.GetProviderId(MetadataProvider.Imdb);
             if (!CatalogIdentity.NeedsRekey(oldImdb, newImdb))
                 return;
+
+            // Another item has the new IMDb id as its own: taking it would give two items one
+            // id. Leave both as they are; the duplicates report shows them.
+            var holder = libraryManager
+                .GetItemList(
+                    new InternalItemsQuery
+                    {
+                        IncludeItemTypes = [existing.GetBaseItemKind()],
+                        HasAnyProviderId = new Dictionary<string, string>
+                        {
+                            [nameof(MetadataProvider.Imdb)] = newImdb!,
+                        },
+                        Recursive = true,
+                        ExcludeTags = [StreamTag],
+                        IsDeadPerson = true, // skip filter marker
+                    }
+                )
+                .FirstOrDefault(x =>
+                    x.Id != existing.Id
+                    && !(x is Video v && v.IsStream())
+                    && string.Equals(
+                        x.GetProviderId(MetadataProvider.Imdb),
+                        newImdb,
+                        StringComparison.OrdinalIgnoreCase
+                    )
+                );
+            if (holder is not null)
+            {
+                _log.LogWarning(
+                    "{Name} ({Native} {NativeId}): the add-on now gives IMDb id {New}, which {Other} ({OtherId}) already has; kept {Old}",
+                    existing.Name,
+                    native.Key,
+                    native.Value,
+                    newImdb,
+                    holder.Name,
+                    holder.Id,
+                    oldImdb
+                );
+                return;
+            }
 
             var ids = new Dictionary<string, string>(existing.ProviderIds, StringComparer.OrdinalIgnoreCase);
             CatalogIdentity.WriteAliases(
@@ -867,7 +938,23 @@ public sealed class GelatoManager(
         Folder parent
     )
     {
-        return FindByProviderIds(providerIds, kind, parent).FirstOrDefault();
+        if (FindByProviderIds(providerIds, kind, parent).FirstOrDefault() is { } found)
+            return found;
+
+        // Same fallback as FindExistingItem: by the IMDb id, only a title with no native id or
+        // the same one.
+        if (
+            CatalogIdentity.NativeId(providerIds) is not { } native
+            || !providerIds.TryGetValue(nameof(MetadataProvider.Imdb), out var imdb)
+            || string.IsNullOrWhiteSpace(imdb)
+        )
+            return null;
+        return FindByProviderIds(
+                new Dictionary<string, string> { [nameof(MetadataProvider.Imdb)] = imdb },
+                kind,
+                parent
+            )
+            .FirstOrDefault(x => CatalogIdentity.ImdbMatchIsSame(x.ProviderIds, native));
     }
 
     /// <summary>
@@ -892,6 +979,10 @@ public sealed class GelatoManager(
     /// sorting. We make sure to keep a one stable version based on primaryversionid
     /// </summary>
     /// <returns></returns>
+    /// <summary>What <see cref="SyncStreams"/> returns for an episode that has not aired: no
+    /// lookup was made, so nothing is to be remembered.</summary>
+    public const int NotAiredYet = -1;
+
     public async Task<int> SyncStreams(BaseItem item, Guid userId, CancellationToken ct)
     {
         var count = 0;
@@ -933,13 +1024,14 @@ public sealed class GelatoManager(
 
         if (video is Episode && AirDate.NotYetAired(video.PremiereDate, DateTime.UtcNow))
         {
+            // Not marked as "no streams" by the caller: the skip is the air date, not a lookup.
             _log.LogDebug(
                 "SyncStreams: {Name} ({Id}) airs {Date:u}, not looking up streams yet",
                 video.Name,
                 video.Id,
                 video.PremiereDate
             );
-            return 0;
+            return NotAiredYet;
         }
 
         var isEpisode = video is Episode;

@@ -1,0 +1,33 @@
+{
+ "meta": {
+  "id": "kitsu:601",
+  "type": "series",
+  "name": "Cine Show",
+  "releaseInfo": "2020-2020",
+  "status": "Ended",
+  "imdb_id": "tt0000601",
+  "videos": [
+   {
+    "id": "kitsu:601:1",
+    "title": "Episode 1",
+    "season": 1,
+    "episode": 1,
+    "released": "2020-01-01T00:00:00.000Z"
+   },
+   {
+    "id": "kitsu:601:2",
+    "title": "Episode 2",
+    "season": 1,
+    "episode": 2,
+    "released": "2020-01-02T00:00:00.000Z"
+   },
+   {
+    "id": "kitsu:601:3",
+    "title": "Episode 3",
+    "season": 1,
+    "episode": 3,
+    "released": "2020-01-03T00:00:00.000Z"
+   }
+  ]
+ }
+}

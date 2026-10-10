@@ -507,18 +507,29 @@ def sc_aliasclash(jf, addon, c):
 
 
 def sc_unaired(jf, addon, c):
-    """An episode that hasn't aired gets no stream lookup; an aired one does."""
-    addon.stage = os.path.join(FIXTURES, "unaired")
+    """No stream lookup for an episode that hasn't aired; one due within a day is looked up."""
+    import datetime
+    stage = os.path.join(jf.work, "unaired-stage")
+    shutil.copytree(os.path.join(FIXTURES, "unaired"), stage, dirs_exist_ok=True)
+    meta_file = os.path.join(stage, "meta", "series", "tt0000401.json")
+    meta = json.load(open(meta_file))
+    soon = (datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=12)).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+    meta["meta"]["videos"].append({"id": "tt0000401:1:3", "title": "Airs today", "season": 1, "episode": 3, "released": soon})
+    json.dump(meta, open(meta_file, "w"))
+    shutil.copy(os.path.join(stage, "stream", "series", "tt0000401_1_1.json"),
+                os.path.join(stage, "stream", "series", "tt0000401_1_3.json"))
+    addon.stage = stage
     import_all(jf)
     eps = {e["Name"]: e for e in jf.items("Episode")}
-    c.eq("episodes", sorted(eps), ["Aired", "Not aired"])
-    if len(eps) != 2:
+    c.eq("episodes", sorted(eps), ["Aired", "Airs today", "Not aired"])
+    if len(eps) != 3:
         return
-    for name in ("Aired", "Not aired"):
+    for name in ("Aired", "Airs today", "Not aired"):
         jf.call("POST", f"/Items/{eps[name]['Id']}/PlaybackInfo?userId={jf.admin}", {})
     time.sleep(3)
     asked = [r for r in addon.requests if r.startswith("stream/series/tt0000401")]
     c.true("stream lookup for the aired episode", any(r.startswith("stream/series/tt0000401:1:1") for r in asked))
+    c.true("stream lookup for the episode due within a day", any(r.startswith("stream/series/tt0000401:1:3") for r in asked))
     c.eq("stream lookups for the episode that hasn't aired",
          [r for r in asked if r.startswith("stream/series/tt0000401:1:2")], [])
 
@@ -540,6 +551,39 @@ def sc_search(jf, addon, c):
     c.eq("user results", sorted(i["Name"] for i in (body or {}).get("Items", [])), ["Lumen", "Lumen Film"])
 
 
+def ids_of(jf, name):
+    return next((s.get("ProviderIds", {}) for s in jf.items("Series") if s["Name"] == name), {})
+
+
+def sc_cinemeta(jf, addon, c):
+    """A show from a catalogue without native ids, later listed by a kitsu catalogue: one show."""
+    addon.stage = os.path.join(FIXTURES, "cinemeta", "stage1")
+    import_all(jf)
+    first = jf.items("Series")
+    c.eq("series after the first import", [s["Name"] for s in first], ["Cine Show"])
+    jf.restart(); jf.login()
+    addon.stage = os.path.join(FIXTURES, "cinemeta", "stage2")
+    import_all(jf)
+    series = jf.items("Series")
+    c.eq("series after the kitsu import", [(s["Name"], s["Id"]) for s in series], [(s["Name"], s["Id"]) for s in first])
+    c.eq("native id stored", {k.lower(): v for k, v in ids_of(jf, "Cine Show").items()}.get("kitsu"), "601")
+    c.eq("episodes", len(jf.items("Episode")), 3)
+    repeat_check(jf, c)
+
+
+def sc_rekeyguard(jf, addon, c):
+    """An IMDb id another show already has is not taken over."""
+    addon.stage = os.path.join(FIXTURES, "rekeyguard", "stage1")
+    import_all(jf)
+    jf.restart(); jf.login()
+    addon.stage = os.path.join(FIXTURES, "rekeyguard", "stage2")
+    import_all(jf)
+    c.eq("series", sorted(s["Name"] for s in jf.items("Series")), ["Show A", "Show B"])
+    c.eq("Show A keeps its IMDb id", ids_of(jf, "Show A").get("Imdb"), "tt0000701")
+    c.eq("Show B keeps its IMDb id", ids_of(jf, "Show B").get("Imdb"), "tt0000702")
+    c.true("logged", any("already has; kept" in l for l in jf.all_log()))
+
+
 SCENARIOS = {
     "initiald": sc_initiald,
     "sharedtmdb": sc_sharedtmdb,
@@ -553,6 +597,8 @@ SCENARIOS = {
     "aliasclash": sc_aliasclash,
     "unaired": sc_unaired,
     "search": sc_search,
+    "cinemeta": sc_cinemeta,
+    "rekeyguard": sc_rekeyguard,
     "splitsafe": sc_splitsafe,
     "apikey": sc_apikey,
 }

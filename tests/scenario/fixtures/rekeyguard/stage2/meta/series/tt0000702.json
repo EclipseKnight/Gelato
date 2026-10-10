@@ -1,0 +1,25 @@
+{
+ "meta": {
+  "id": "tt0000702",
+  "type": "series",
+  "name": "Show B",
+  "releaseInfo": "2020-2020",
+  "status": "Ended",
+  "videos": [
+   {
+    "id": "tt0000702:1:1",
+    "title": "Episode 1",
+    "season": 1,
+    "episode": 1,
+    "released": "2020-01-01T00:00:00.000Z"
+   },
+   {
+    "id": "tt0000702:1:2",
+    "title": "Episode 2",
+    "season": 1,
+    "episode": 2,
+    "released": "2020-01-02T00:00:00.000Z"
+   }
+  ]
+ }
+}
