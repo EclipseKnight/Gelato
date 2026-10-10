@@ -1,0 +1,33 @@
+{
+ "meta": {
+  "id": "tt0000502",
+  "type": "series",
+  "name": "Partwise",
+  "releaseInfo": "2020-2020",
+  "status": "Ended",
+  "_tvdbId": "900002",
+  "videos": [
+   {
+    "id": "tt0000502:1:1",
+    "title": "Episode 1",
+    "season": 1,
+    "episode": 1,
+    "released": "2020-01-01T00:00:00.000Z"
+   },
+   {
+    "id": "tt0000502:1:2",
+    "title": "Episode 2",
+    "season": 1,
+    "episode": 2,
+    "released": "2020-01-02T00:00:00.000Z"
+   },
+   {
+    "id": "tt0000502:1:3",
+    "title": "Episode 3",
+    "season": 1,
+    "episode": 3,
+    "released": "2020-01-03T00:00:00.000Z"
+   }
+  ]
+ }
+}

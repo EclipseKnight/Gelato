@@ -1,0 +1,34 @@
+[
+ {
+  "type": "TV",
+  "mal_id": 61967,
+  "kitsu_id": 50024,
+  "tvdb_id": 331753,
+  "imdb_id": [
+   "tt7441658"
+  ],
+  "season": {
+   "tvdb": 2,
+   "tmdb": 2
+  }
+ },
+ {
+  "type": "TV",
+  "mal_id": 70001,
+  "tvdb_id": 900001,
+  "season": {
+   "tvdb": 2
+  }
+ },
+ {
+  "type": "TV",
+  "mal_id": 70002,
+  "tvdb_id": 900002,
+  "season": {
+   "tvdb": 1
+  },
+  "imdb_id": [
+   "tt0000502"
+  ]
+ }
+]

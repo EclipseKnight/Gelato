@@ -26,7 +26,6 @@ AUTH = 'MediaBrowser Client="gelato-scenario", Device="runner", DeviceId="gelato
 # the run; a known failure that passes is reported so its entry can be removed.
 KNOWN = {
     "reattach": "a collision on reattach leaves the older row parked (fix: merge colliding watch-state rows)",
-    "blackclover": "a season listed as its own entry becomes its own series (fix: file split seasons)",
 }
 
 
@@ -167,6 +166,7 @@ class Jellyfin:
         cfg = self.call("GET", f"/Plugins/{GELATO_ID}/Configuration")
         cfg.update({"Url": addon_url, "MoviePath": "/gelato/movies", "SeriesPath": "/gelato/series",
                     "RemuxDbEnabled": False, "RemuxDbContribute": False, "PreProbe": False,
+                    "AnimeMappingUrl": addon_url + "/anime-list-full.json",
                     "Catalogs": [
                         {"Id": "anime", "Type": "series", "Name": "Anime", "Enabled": True, "MaxItems": 100, "Url": ""},
                         {"Id": "films", "Type": "movie", "Name": "Films", "Enabled": True, "MaxItems": 100, "Url": ""}]})
@@ -355,6 +355,51 @@ def sc_blackclover(jf, addon, c):
     import_all(jf)
     c.eq("series (season 2 filed under the show)", [s["Name"] for s in jf.items("Series")], ["Black Clover"])
     c.eq("episodes", len(jf.items("Episode")), 5)
+    s2 = sorted((e.get("SeriesName"), e.get("ParentIndexNumber"), e.get("IndexNumber")) for e in jf.items("Episode")
+                if e.get("ParentIndexNumber") == 2)
+    c.eq("season 2 of Black Clover", s2, [("Black Clover", 2, 1), ("Black Clover", 2, 2)])
+    repeat_check(jf, c)
+
+
+def sc_splitsafe(jf, addon, c):
+    """No parent: its own show. Parent already has the season: no copy, nothing moved."""
+    addon.stage = os.path.join(FIXTURES, "splitsafe")
+    import_all(jf)
+    c.eq("series", sorted(s["Name"] for s in jf.items("Series")), ["Orphan Season 2", "Partwise"])
+    eps = jf.items("Episode")
+    part = sorted((e.get("ParentIndexNumber"), e.get("IndexNumber"), e.get("Path", "").rsplit("/", 1)[-1])
+                  for e in eps if e.get("SeriesName") == "Partwise")
+    c.eq("Partwise keeps its own episodes", part,
+         [(1, 1, "tt0000502:1:1"), (1, 2, "tt0000502:1:2"), (1, 3, "tt0000502:1:3")])
+    c.eq("episodes", len(eps), 5)
+    repeat_check(jf, c)
+
+
+def sc_apikey(jf, addon, c):
+    """Item read, media segments and delete with an API key and no user id."""
+    addon.stage = os.path.join(FIXTURES, "unaired")
+    import_all(jf)
+    key = jf.api_key()
+    eps = {e["Name"]: e for e in jf.items("Episode")}
+    series = jf.items("Series")
+    if "Aired" not in eps or not series:
+        c.true("library imported", False)
+        return
+    ep = eps["Aired"]["Id"]
+    code, _ = jf.get_status(f"/Items?ids={ep}", key)
+    c.eq("item read", code, 200)
+    code, _ = jf.get_status(f"/MediaSegments/{ep}", key)
+    c.eq("media segments", code, 200)
+    errors = len(jf.errors())
+    req = urllib.request.Request(jf.base + f"/Items/{series[0]['Id']}", method="DELETE",
+                                 headers={"Authorization": f'MediaBrowser Token="{key}"'})
+    try:
+        code = urllib.request.urlopen(req, timeout=60).status
+    except urllib.error.HTTPError as e:
+        code = e.code
+    c.eq("delete", code, 204)
+    c.eq("series gone", jf.items("Series"), [])
+    c.eq("new errors in the log", jf.errors()[errors:][:5], [])
 
 
 def sc_delete(jf, addon, c):
@@ -508,6 +553,8 @@ SCENARIOS = {
     "aliasclash": sc_aliasclash,
     "unaired": sc_unaired,
     "search": sc_search,
+    "splitsafe": sc_splitsafe,
+    "apikey": sc_apikey,
 }
 
 
