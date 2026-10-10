@@ -90,6 +90,14 @@ public class CatalogImportService(
                 var mediaType = meta.Type;
                 var baseItemKind = mediaType.ToBaseItem();
 
+                if (GelatoManager.IsExcluded(cfg, meta) is { } excludedBy)
+                {
+                    logger.LogDebug("{Id} is on the exclude list ({Entry}), skipped", meta.Id, excludedBy);
+                    Interlocked.Increment(ref skipped);
+                    Interlocked.Increment(ref processedItems);
+                    return;
+                }
+
                 // A season the anime mapping links to another show waits until the rest of the
                 // catalog is in, so the show it belongs to exists when it is placed.
                 if (

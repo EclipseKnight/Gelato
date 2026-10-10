@@ -455,6 +455,12 @@ public sealed class GelatoManager(
             return (existing, false);
         }
 
+        if (IsExcluded(cfg, meta) is { } entry)
+        {
+            _log.LogInformation("{Name} ({Id}) is on the exclude list ({Entry}), not created", meta.Name, meta.Id, entry);
+            return (null, false);
+        }
+
         await EnrichMetaAsync(meta, ct).ConfigureAwait(false);
 
         if (IntoBaseItem(meta) is not { } baseItem)
@@ -564,6 +570,10 @@ public sealed class GelatoManager(
             }
         });
     }
+
+    /// <summary>The exclude-list entry this title matches, or null.</summary>
+    public static string? IsExcluded(PluginConfiguration cfg, StremioMeta meta) =>
+        ExcludeList.Match(ExcludeList.Parse(cfg.ExcludedIds), meta.Id, meta.GetProviderIds());
 
     /// <summary>
     /// A found item takes the IMDb id the catalogue gives it now, when the catalogue identifies it
@@ -1938,6 +1948,7 @@ public sealed class GelatoManager(
         var episodesInserted = 0;
         var conflicts = 0;
         string? conflictOwner = null;
+        var conflictOwnerId = Guid.Empty;
 
         var newSeasons = new List<Season>();
         var repairedSeasons = new List<Season>();
@@ -2118,6 +2129,8 @@ public sealed class GelatoManager(
                     // first owner keeps it; the clash is logged once per series below.
                     conflicts++;
                     conflictOwner ??= collidingEpisode!.SeriesName;
+                    if (conflictOwnerId == Guid.Empty)
+                        conflictOwnerId = collidingEpisode!.SeriesId;
                     continue;
                 }
 
@@ -2203,6 +2216,16 @@ public sealed class GelatoManager(
                 libraryManager.RegisterItem(episode);
             }
         }
+
+        EpisodeConflicts.Init(Path.Combine(appPaths.DataPath, "gelato"));
+        EpisodeConflicts.Record(
+            series.Id,
+            series.Name,
+            conflictOwnerId,
+            conflictOwner,
+            conflicts,
+            seasonGroups.Where(g => g.Key > 0).Sum(g => g.Count())
+        );
 
         if (conflicts > 0)
         {
