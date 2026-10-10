@@ -43,6 +43,8 @@ class Addon:
             def do_GET(self):
                 path = urllib.parse.unquote(urllib.parse.urlparse(self.path).path).lstrip("/")
                 addon.requests.append(path)
+                if ".." in path.split("/"):
+                    return self.send(400, b"{}")
                 if addon.delay and path.startswith("stream/"):
                     time.sleep(addon.delay)
                 # A "skip=N" page is past the end: catalogs here are one page.

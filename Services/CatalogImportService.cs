@@ -218,7 +218,7 @@ public class CatalogImportService(
                 await ImportOne(meta, ct, false).ConfigureAwait(false);
             }
             // Counted once when they were put aside, and once more when imported.
-            processedItems -= deferred.Count;
+            Interlocked.Add(ref processedItems, -deferred.Count);
 
             if (catalogCfg.CreateCollection)
             {
