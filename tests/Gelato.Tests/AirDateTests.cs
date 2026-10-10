@@ -9,7 +9,7 @@ public class AirDateTests
 
     [Fact]
     public void Future_date_has_not_aired() =>
-        Assert.True(AirDate.NotYetAired(Now.AddHours(1), Now));
+        Assert.True(AirDate.NotYetAired(Now.AddDays(1).AddMinutes(1), Now));
 
     [Fact]
     public void Past_or_present_date_has_aired()
@@ -23,9 +23,16 @@ public class AirDateTests
         Assert.False(AirDate.NotYetAired(new DateTime(2026, 10, 9, 0, 0, 0, DateTimeKind.Unspecified), Now));
 
     [Fact]
+    public void Due_within_a_day_is_looked_up()
+    {
+        Assert.False(AirDate.NotYetAired(Now.AddHours(1), Now));
+        Assert.False(AirDate.NotYetAired(Now.AddDays(1), Now));
+    }
+
+    [Fact]
     public void No_date_is_looked_up() => Assert.False(AirDate.NotYetAired(null, Now));
 
     [Fact]
     public void Unspecified_kind_is_read_as_utc() =>
-        Assert.True(AirDate.NotYetAired(new DateTime(2026, 10, 9, 13, 0, 0, DateTimeKind.Unspecified), Now));
+        Assert.True(AirDate.NotYetAired(new DateTime(2026, 10, 10, 13, 0, 0, DateTimeKind.Unspecified), Now));
 }

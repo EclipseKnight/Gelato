@@ -103,6 +103,9 @@ public static class StreamSyncPolicy
     )
     {
         var count = await sync(ct).ConfigureAwait(false);
+        // Negative: no lookup was made (an episode that has not aired); nothing to remember.
+        if (count < 0)
+            return;
         if (count > 0 || !isMergedVersion)
         {
             mark(count);

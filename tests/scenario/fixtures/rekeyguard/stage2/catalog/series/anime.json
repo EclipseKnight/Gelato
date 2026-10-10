@@ -1,0 +1,19 @@
+{
+ "metas": [
+  {
+   "id": "kitsu:701",
+   "type": "series",
+   "name": "Show A",
+   "releaseInfo": "2020-2020",
+   "status": "Ended",
+   "imdb_id": "tt0000702"
+  },
+  {
+   "id": "tt0000702",
+   "type": "series",
+   "name": "Show B",
+   "releaseInfo": "2020-2020",
+   "status": "Ended"
+  }
+ ]
+}

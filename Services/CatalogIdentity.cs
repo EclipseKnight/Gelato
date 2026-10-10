@@ -60,6 +60,16 @@ public static class CatalogIdentity
             .ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.OrdinalIgnoreCase);
     }
 
+    /// <summary>
+    /// Whether an item found by the IMDb id alone (after the native id found nothing) is the same
+    /// title: it has no native id yet (added from a catalogue without one, e.g. Cinemeta), or
+    /// the same one. An item with another native id is another title that shares the IMDb id.
+    /// </summary>
+    public static bool ImdbMatchIsSame(IReadOnlyDictionary<string, string> candidate, KeyValuePair<string, string> native) =>
+        NativeId(candidate) is not { } other
+        || (string.Equals(other.Key, native.Key, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(other.Value, native.Value, StringComparison.OrdinalIgnoreCase));
+
     public static bool IsAliasKey(string key) =>
         key.StartsWith(AliasKey, StringComparison.OrdinalIgnoreCase);
 
