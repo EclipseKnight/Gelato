@@ -83,6 +83,12 @@ public sealed class FakeAddon : IDisposable
                     return;
                 }
 
+            if (path.Split('/').Contains(".."))
+            {
+                ctx.Response.StatusCode = 400;
+                ctx.Response.Close();
+                return;
+            }
             var file = Path.Combine(_root, path.TrimStart('/').Replace(':', '_'));
             if (!File.Exists(file))
             {

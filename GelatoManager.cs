@@ -576,11 +576,6 @@ public sealed class GelatoManager(
     public static string? IsExcluded(PluginConfiguration cfg, StremioMeta meta) =>
         ExcludeList.Match(ExcludeList.Parse(cfg.ExcludedIds), meta.Id, meta.GetProviderIds());
 
-    /// <summary>
-    /// A found item takes the IMDb id the catalogue gives it now, when the catalogue identifies it
-    /// by a native id and that IMDb id changed. The old one is kept as an alias (see
-    /// <see cref="CatalogIdentity"/>). Items identified by their IMDb id are never re-keyed.
-    /// </summary>
     /// <summary>Whether the anime mapping links this catalogue entry to a season of a show.</summary>
     public async Task<bool> IsMappedSeasonAsync(PluginConfiguration cfg, StremioMeta meta, CancellationToken ct)
     {
@@ -751,6 +746,11 @@ public sealed class GelatoManager(
         }
     }
 
+    /// <summary>
+    /// A found item takes the IMDb id the catalogue gives it now, when the catalogue identifies it
+    /// by a native id and that IMDb id changed. The old one is kept as an alias (see
+    /// <see cref="CatalogIdentity"/>). Items identified by their IMDb id are never re-keyed.
+    /// </summary>
     private async Task ReconcileIdentityAsync(BaseItem existing, StremioMeta meta, CancellationToken ct)
     {
         try

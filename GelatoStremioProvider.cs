@@ -1004,19 +1004,19 @@ public class StremioMeta
         return false;
     }
 
+    /// <summary>A copy whose own fields can be changed without touching this one.</summary>
+    public StremioMeta ShallowCopy() => (StremioMeta)MemberwiseClone();
+
     /// <summary>
     /// The status the add-on states: the status field, or a year range in releaseInfo. Null when
     /// it only can be guessed (single year, first episode date), so a stored status is never
     /// changed on a guess.
     /// </summary>
-    /// <summary>A copy whose own fields can be changed without touching this one.</summary>
-    public StremioMeta ShallowCopy() => (StremioMeta)MemberwiseClone();
-
     public StremioStatus? GetStatedStatus()
     {
         if (Status is not null and not StremioStatus.Unknown)
             return Status;
-        var r = ReleaseInfo?.Trim();
+        var r = YearRange();
         if (string.IsNullOrEmpty(r) || !r.Contains('-'))
             return null;
         return r.EndsWith('-') ? StremioStatus.Continuing : StremioStatus.Ended;
@@ -1031,7 +1031,7 @@ public class StremioMeta
         // releaseInfo: "1994-" → continuing, "1994-2004" → ended, "2026" → unreleased
         if (!string.IsNullOrWhiteSpace(ReleaseInfo))
         {
-            var trimmed = ReleaseInfo.Trim();
+            var trimmed = YearRange()!;
             if (trimmed.EndsWith('-'))
                 return StremioStatus.Continuing;
             if (trimmed.Contains('-'))
@@ -1050,11 +1050,14 @@ public class StremioMeta
         }
 
         // Single year in releaseInfo with no other signals → Upcoming
-        if (!string.IsNullOrWhiteSpace(ReleaseInfo) && !ReleaseInfo.Contains('-'))
+        if (!string.IsNullOrWhiteSpace(ReleaseInfo) && !YearRange()!.Contains('-'))
             return StremioStatus.Upcoming;
 
         return null;
     }
+
+    /// <summary>releaseInfo trimmed, with an en dash ("2011–2014", as some add-ons write it) read as "-".</summary>
+    private string? YearRange() => ReleaseInfo?.Trim().Replace('\u2013', '-');
 }
 
 public class StremioTrailer
