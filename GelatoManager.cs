@@ -321,7 +321,8 @@ public sealed class GelatoManager(
         var query = new InternalItemsQuery
         {
             IncludeItemTypes = [item.GetBaseItemKind()],
-            HasAnyProviderId = item.ProviderIds,
+            // The native catalogue id when there is one, so an IMDb id change can't make a copy.
+            HasAnyProviderId = CatalogIdentity.LookupIds(item.ProviderIds),
             Recursive = true,
             ExcludeTags = [StreamTag],
             User = user,
@@ -389,6 +390,7 @@ public sealed class GelatoManager(
                     existing.Id,
                     existing.Name
                 );
+                await ReconcileIdentityAsync(existing, meta, ct).ConfigureAwait(false);
                 return (existing, false);
             }
 
@@ -434,6 +436,7 @@ public sealed class GelatoManager(
                 existing.Id,
                 existing.Name
             );
+            await ReconcileIdentityAsync(existing, meta, ct).ConfigureAwait(false);
             return (existing, false);
         }
 
@@ -457,6 +460,7 @@ public sealed class GelatoManager(
             await baseItem
                 .UpdateToRepositoryAsync(ItemUpdateType.MetadataEdit, CancellationToken.None)
                 .ConfigureAwait(false);
+            await RemoveAliasFromOthersAsync(baseItem, ct).ConfigureAwait(false);
         }
         else
         {
@@ -546,6 +550,111 @@ public sealed class GelatoManager(
         });
     }
 
+    /// <summary>
+    /// A found item takes the IMDb id the catalogue gives it now, when the catalogue identifies it
+    /// by a native id and that IMDb id changed. The old one is kept as an alias (see
+    /// <see cref="CatalogIdentity"/>). Items identified by their IMDb id are never re-keyed.
+    /// </summary>
+    private async Task ReconcileIdentityAsync(BaseItem existing, StremioMeta meta, CancellationToken ct)
+    {
+        try
+        {
+            if (IntoBaseItem(meta) is not { } incoming)
+                return;
+            if (CatalogIdentity.NativeId(incoming.ProviderIds) is not { } native)
+                return;
+            if (
+                !string.Equals(
+                    existing.GetProviderId(native.Key),
+                    native.Value,
+                    StringComparison.OrdinalIgnoreCase
+                )
+            )
+                return;
+
+            var oldImdb = existing.GetProviderId(MetadataProvider.Imdb);
+            var newImdb = incoming.GetProviderId(MetadataProvider.Imdb);
+            if (!CatalogIdentity.NeedsRekey(oldImdb, newImdb))
+                return;
+
+            var ids = new Dictionary<string, string>(existing.ProviderIds, StringComparer.OrdinalIgnoreCase);
+            CatalogIdentity.WriteAliases(
+                ids,
+                CatalogIdentity.AddAlias(CatalogIdentity.ReadAliases(ids), oldImdb!, DateTime.UtcNow)
+            );
+            ids[nameof(MetadataProvider.Imdb)] = newImdb!;
+            if (incoming.GetProviderId("Stremio") is { Length: > 0 } stremio)
+                ids["Stremio"] = stremio;
+            existing.ProviderIds = ids;
+            await existing
+                .UpdateToRepositoryAsync(ItemUpdateType.MetadataEdit, ct)
+                .ConfigureAwait(false);
+
+            _log.LogInformation(
+                "{Name} ({Native} {NativeId}): IMDb id changed from {Old} to {New}; kept the item, old id kept as an alias",
+                existing.Name,
+                native.Key,
+                native.Value,
+                oldImdb,
+                newImdb
+            );
+            await RemoveAliasFromOthersAsync(existing, ct).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _log.LogWarning(ex, "Could not update the ids of {Name} ({Id})", existing.Name, existing.Id);
+        }
+    }
+
+    /// <summary>
+    /// An item's IMDb id is its own: other items that keep it as an alias lose that alias.
+    /// </summary>
+    private async Task RemoveAliasFromOthersAsync(BaseItem owner, CancellationToken ct)
+    {
+        if (owner.GetProviderId(MetadataProvider.Imdb) is not { Length: > 0 } imdb)
+            return;
+        try
+        {
+            var holders = libraryManager.GetItemList(
+                new InternalItemsQuery
+                {
+                    IncludeItemTypes = [BaseItemKind.Series, BaseItemKind.Movie],
+                    HasAnyProviderId = CatalogIdentity.AliasLookup(imdb),
+                    Recursive = true,
+                    IsDeadPerson = true, // skip filter marker
+                }
+            );
+            foreach (var item in holders.Where(i => i.Id != owner.Id))
+            {
+                var ids = new Dictionary<string, string>(item.ProviderIds, StringComparer.OrdinalIgnoreCase);
+                CatalogIdentity.WriteAliases(
+                    ids,
+                    CatalogIdentity.RemoveAlias(CatalogIdentity.ReadAliases(ids), imdb)
+                );
+                item.ProviderIds = ids;
+                await item.UpdateToRepositoryAsync(ItemUpdateType.MetadataEdit, ct).ConfigureAwait(false);
+                _log.LogWarning(
+                    "{Imdb} is now the id of {Owner}; removed it from the aliases of {Name}",
+                    imdb,
+                    owner.Name,
+                    item.Name
+                );
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _log.LogWarning(ex, "Could not check aliases of {Imdb}", imdb);
+        }
+    }
+
     private IEnumerable<BaseItem> FindByProviderIds(
         Dictionary<string, string> providerIds,
         BaseItemKind kind,
@@ -557,7 +666,9 @@ public sealed class GelatoManager(
             IncludeItemTypes = [kind],
             Recursive = true,
             ParentId = parent.Id,
-            HasAnyProviderId = providerIds
+            HasAnyProviderId = CatalogIdentity.NativeId(providerIds) is { } native
+                ? new Dictionary<string, string> { [native.Key] = native.Value }
+                : providerIds
                 .Where(kvp =>
                     kvp.Key is nameof(MetadataProvider.Tmdb) or nameof(MetadataProvider.Tvdb)
                     || kvp.Key == nameof(MetadataProvider.TvRage)
@@ -1466,11 +1577,13 @@ public sealed class GelatoManager(
                 seriesRootFolder.AddChild(tmpSeries);
                 await tmpSeries.UpdateToRepositoryAsync(ItemUpdateType.MetadataImport, ct);
                 await ReattachWatchStateAsync([tmpSeries], ct).ConfigureAwait(false);
+                await RemoveAliasFromOthersAsync(tmpSeries, ct).ConfigureAwait(false);
                 series = tmpSeries;
             }
             else
             {
                 series = found;
+                await ReconcileIdentityAsync(series, seriesMeta, ct).ConfigureAwait(false);
             }
         }
 

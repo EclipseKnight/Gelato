@@ -1,0 +1,22 @@
+{
+ "metas": [
+  {
+   "id": "kitsu:12",
+   "type": "series",
+   "name": "One Piece",
+   "releaseInfo": "2020",
+   "year": 2020,
+   "status": "Continuing",
+   "imdb_id": "tt11737520"
+  },
+  {
+   "id": "kitsu:99",
+   "type": "series",
+   "name": "Another Show",
+   "releaseInfo": "2020",
+   "year": 2020,
+   "status": "Ended",
+   "imdb_id": "tt0388629"
+  }
+ ]
+}
