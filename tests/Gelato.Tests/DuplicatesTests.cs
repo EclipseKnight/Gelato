@@ -38,6 +38,14 @@ public class DuplicateReportTests
         new(Guid.NewGuid(), name, "Series", ids.ToDictionary(x => x.Item1, x => x.Item2), eps);
 
     [Fact]
+    public void Text_shows_specials()
+    {
+        var copy = new DuplicateReport.Item(Guid.NewGuid(), "VOTOMS", "Series", new Dictionary<string, string> { ["Kitsu"] = "1" }, 0, 14);
+        var keep = new DuplicateReport.Item(Guid.NewGuid(), "VOTOMS", "Series", new Dictionary<string, string> { ["Kitsu"] = "1" }, 75, 14);
+        Assert.Contains("0 episodes, 14 specials", DuplicateReport.ToText(DuplicateReport.Build([copy, keep], []), DateTime.UtcNow));
+    }
+
+    [Fact]
     public void Same_native_id_is_likely()
     {
         var a = I("A", 3, ("Kitsu", "12"));

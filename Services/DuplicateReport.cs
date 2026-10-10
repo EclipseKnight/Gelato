@@ -11,7 +11,8 @@ public static class DuplicateReport
         string Name,
         string Kind,
         IReadOnlyDictionary<string, string> ProviderIds,
-        int RegularEpisodes
+        int RegularEpisodes,
+        int Specials = 0
     );
 
     public enum Confidence
@@ -116,7 +117,7 @@ public static class DuplicateReport
             foreach (var i in f.Items)
             {
                 var ids = string.Join(", ", i.ProviderIds.Where(kv => !string.IsNullOrWhiteSpace(kv.Value)).Select(kv => $"{kv.Key}={kv.Value}"));
-                sb.AppendLine($"  - {i.Name} ({i.Kind}, {i.Id:N}, {i.RegularEpisodes} episodes) {ids}");
+                sb.AppendLine($"  - {i.Name} ({i.Kind}, {i.Id:N}, {i.RegularEpisodes} episodes, {i.Specials} specials) {ids}");
             }
         }
         return sb.ToString();

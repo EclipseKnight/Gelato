@@ -354,7 +354,7 @@
                     html += `<div style="display: flex; gap: .8em; align-items: center; padding: .3em 0;">`
                       + `<img src="${esc(img)}" alt="" loading="lazy" style="height: 72px; width: 48px; object-fit: cover; border-radius: 3px; background: rgba(255,255,255,.08);" onerror="this.style.visibility='hidden'">`
                       + `<div style="flex: 1; min-width: 0;"><a is="emby-linkbutton" class="button-link" href="#/details?id=${esc(id)}&serverId=${esc(serverId)}">${esc(i.Name ?? i.name)}</a>`
-                      + `<div style="opacity: .7; font-size: .9em;">${esc(i.Kind ?? i.kind)} · ${esc(i.RegularEpisodes ?? i.regularEpisodes)} regular episodes · ${esc(id)}</div>`
+                      + `<div style="opacity: .7; font-size: .9em;">${esc(i.Kind ?? i.kind)} · ${esc(i.RegularEpisodes ?? i.regularEpisodes)} episodes, ${esc(i.Specials ?? i.specials ?? 0)} specials · ${esc(id)}</div>`
                       + `<div style="opacity: .55; font-size: .85em; overflow-wrap: anywhere;">${esc(idText)}</div></div>`
                       + (own ? `<button is="emby-button" type="button" class="emby-button" data-exclude="${esc(own)}" data-item="${esc(id)}" data-name="${esc(i.Name ?? i.name)}" style="padding: .1em .6em;">Exclude</button>` : '')
                       + `</div>`;
