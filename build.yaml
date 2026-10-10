@@ -1,7 +1,7 @@
 ---
 name: "Gelato"
 guid: "94EA4E14-8163-4989-96FE-0A2094BC2D6A"
-version: "0.26.22.115"
+version: "0.26.22.116"
 targetAbi: "12.1.0.0"
 framework: "net10.0"
 owner: "lstb1t"
@@ -14,7 +14,7 @@ category: "General"
 # The card in the plugin catalog; Jellyfin downloads it when it reads the repository.
 imageUrl: "https://raw.githubusercontent.com/lostb1t/Gelato/main/banner.png"
 changelog: >
-  Altffour build 0.26.22.115 on upstream main e4ff1b8 (v0.26.22.0 and later fixes, Jellyfin
+  Altffour build 0.26.22.116 on upstream main e4ff1b8 (v0.26.22.0 and later fixes, Jellyfin
   12.1): deterministic stream identity (upstream PR #142); JSON converters use TrySkip (fixes
   seasonPosters/enum parse failures under DeserializeAsync); search-result posters are resized
   like library images. A stream sync that finds no streams is remembered per user for
@@ -65,3 +65,6 @@ changelog: >
   again, and the weekly pass runs 2 requests at a time instead of 4.
   Anime mapping list: https only (http to local addresses), 64 MB limit, refetched when the URL
   changes, retried within an hour after a failure. Year ranges with an en dash are read.
+  Probe results are kept on this server by file (info hash and file index, up to 5000 files),
+  so a file probed once shows its tracks for every row and user that gets it; off switch on the
+  plugin page.
