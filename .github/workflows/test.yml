@@ -30,3 +30,21 @@ jobs:
         with:
           name: test-results
           path: test-results
+
+  scenarios:
+    # End-to-end runs against a throwaway Jellyfin 12.1 container and the fake add-on
+    # (tests/scenario/run.py): re-keying, aliases, split seasons, the weekly pass and more.
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Pull Jellyfin 12.1
+        run: docker pull jellyfin/jellyfin:12.1
+
+      - name: Scenario runs
+        run: python3 tests/scenario/run.py
