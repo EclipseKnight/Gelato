@@ -33,6 +33,17 @@ public sealed class GelatoApiController : ControllerBase
         return meta;
     }
 
+    /// <summary>The last possible-duplicates report (read-only), as written by its task.</summary>
+    [HttpGet("duplicates")]
+    [Authorize(Policy = "RequiresElevation")]
+    public ActionResult GetDuplicates([FromServices] MediaBrowser.Common.Configuration.IApplicationPaths paths)
+    {
+        var file = Path.Combine(ScheduledTasks.DuplicatesReportTask.Folder(paths), "duplicates-report.json");
+        if (!System.IO.File.Exists(file))
+            return NotFound();
+        return PhysicalFile(file, "application/json");
+    }
+
     // [HttpGet("catalogs")]
     // Moved to CatalogController
 

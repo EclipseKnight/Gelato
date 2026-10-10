@@ -1,0 +1,34 @@
+{
+ "meta": {
+  "id": "kitsu:13",
+  "type": "series",
+  "name": "One Piece (copy)",
+  "releaseInfo": "2020",
+  "year": 2020,
+  "status": "Continuing",
+  "videos": [
+   {
+    "id": "kitsu:12:1",
+    "title": "Episode 1",
+    "season": 1,
+    "episode": 1,
+    "released": "2020-01-01T00:00:00.000Z"
+   },
+   {
+    "id": "kitsu:12:2",
+    "title": "Episode 2",
+    "season": 1,
+    "episode": 2,
+    "released": "2020-01-02T00:00:00.000Z"
+   },
+   {
+    "id": "kitsu:12:3",
+    "title": "Episode 3",
+    "season": 1,
+    "episode": 3,
+    "released": "2020-01-03T00:00:00.000Z"
+   }
+  ],
+  "imdb_id": "tt11737520"
+ }
+}

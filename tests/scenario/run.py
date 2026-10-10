@@ -582,6 +582,47 @@ def sc_rekeyguard(jf, addon, c):
     c.eq("Show A keeps its IMDb id", ids_of(jf, "Show A").get("Imdb"), "tt0000701")
     c.eq("Show B keeps its IMDb id", ids_of(jf, "Show B").get("Imdb"), "tt0000702")
     c.true("logged", any("already has; kept" in l for l in jf.all_log()))
+def set_config(jf, **values):
+    cfg = jf.call("GET", f"/Plugins/{GELATO_ID}/Configuration")
+    cfg.update(values)
+    jf.call("POST", f"/Plugins/{GELATO_ID}/Configuration", cfg)
+
+
+def sc_dupreport(jf, addon, c):
+    """The report lists a series whose episodes all belong to another one; nothing is changed."""
+    # The copy arrives at a later import, as the One Piece copy did.
+    addon.stage = os.path.join(FIXTURES, "dupreport", "stage1")
+    import_all(jf)
+    addon.stage = os.path.join(FIXTURES, "dupreport", "stage2")
+    import_all(jf)
+    before = snapshot(jf)
+    c.eq("task", jf.task("GelatoDuplicatesReport"), "Completed")
+    report = jf.call("GET", "/gelato/duplicates") or {}
+    likely = [f for f in report.get("findings", []) if f.get("confidence") == 0 or f.get("Confidence") == 0]
+    names = [sorted(i.get("name") or i.get("Name") for i in (f.get("items") or f.get("Items"))) for f in likely]
+    c.eq("likely duplicates", names, [["One Piece", "One Piece (copy)"]])
+    if names != [["One Piece", "One Piece (copy)"]]:
+        print("report:", json.dumps(report)[:1500])
+        print("conflict log:", [l.strip()[:200] for l in jf.all_log() if "belong to another" in l])
+    reason = (likely[0].get("reason") or likely[0].get("Reason") or "") if likely else ""
+    c.true("reason says the same show", "the same show" in reason)
+    c.eq("library unchanged by the report", snapshot(jf), before)
+
+
+def sc_exclude(jf, addon, c):
+    """A title on the exclude list is not created, by catalog id or by IMDb id; others are."""
+    set_config(jf, ExcludedIds=["kitsu:13 # the copy"])
+    addon.stage = os.path.join(FIXTURES, "sharedepisodes")
+    import_all(jf)
+    c.eq("series", sorted(s["Name"] for s in jf.items("Series")), ["One Piece"])
+    c.eq("episodes", len(jf.items("Episode")), 3)
+    set_config(jf, ExcludedIds=["tt0000301"])
+    addon.stage = os.path.join(FIXTURES, "streams")
+    import_all(jf)
+    c.eq("films", sorted(m["Name"] for m in jf.items("Movie")), ["Slow Film"])
+    set_config(jf, ExcludedIds=[])
+    import_all(jf)
+    c.eq("films after the list is cleared", sorted(m["Name"] for m in jf.items("Movie")), ["No Streams Film", "Slow Film"])
 
 
 SCENARIOS = {
@@ -601,6 +642,8 @@ SCENARIOS = {
     "rekeyguard": sc_rekeyguard,
     "splitsafe": sc_splitsafe,
     "apikey": sc_apikey,
+    "dupreport": sc_dupreport,
+    "exclude": sc_exclude,
 }
 
 

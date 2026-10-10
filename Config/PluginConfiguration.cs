@@ -46,6 +46,12 @@ public class PluginConfiguration : BasePluginConfiguration
     /// </summary>
     public bool FileSplitSeasons { get; set; } = true;
 
+    /// <summary>
+    /// Titles that are never created (one id each: tt…, kitsu:…, mal:…, tmdb:…, tvdb:…, with an
+    /// optional "# note"). Filled in by hand; a deleted title is not added automatically.
+    /// </summary>
+    public string[] ExcludedIds { get; set; } = [];
+
     /// <summary>The anime id mapping list (Fribb/anime-lists format) used for that.</summary>
     public string AnimeMappingUrl { get; set; } =
         "https://raw.githubusercontent.com/Fribb/anime-lists/master/anime-list-full.json";
