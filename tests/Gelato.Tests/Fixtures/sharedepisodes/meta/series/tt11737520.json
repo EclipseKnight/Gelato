@@ -1,0 +1,27 @@
+{
+ "meta": {
+  "id": "tt11737520",
+  "type": "series",
+  "name": "One Piece (2)",
+  "videos": [
+   {
+    "id": "gelato://stub/kitsu:12:1",
+    "title": "Episode 1",
+    "season": 1,
+    "episode": 1
+   },
+   {
+    "id": "gelato://stub/kitsu:12:2",
+    "title": "Episode 2",
+    "season": 1,
+    "episode": 2
+   },
+   {
+    "id": "gelato://stub/kitsu:12:3",
+    "title": "Episode 3",
+    "season": 1,
+    "episode": 3
+   }
+  ]
+ }
+}

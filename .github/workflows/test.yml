@@ -1,0 +1,32 @@
+name: Test
+on:
+  push:
+    branches:
+      - "altffour/**"
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Build
+        run: dotnet build Gelato.sln -c Release
+
+      - name: Test
+        run: dotnet test tests/Gelato.Tests -c Release --logger "trx;LogFileName=results.trx" --results-directory test-results
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: test-results

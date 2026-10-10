@@ -1,0 +1,16 @@
+{
+ "metas": [
+  {
+   "id": "tt0000101",
+   "type": "movie",
+   "name": "Film A",
+   "_tmdbId": "5555"
+  },
+  {
+   "id": "tt0000102",
+   "type": "movie",
+   "name": "Film B",
+   "_tmdbId": "5555"
+  }
+ ]
+}
