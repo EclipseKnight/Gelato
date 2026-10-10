@@ -2634,7 +2634,8 @@ public sealed class GelatoManager(
             continuingSeries,
             new ParallelOptions
             {
-                MaxDegreeOfParallelism = 4,
+                // The weekly pass asks the add-on about every Gelato series; go easier on it.
+                MaxDegreeOfParallelism = fullPass ? 2 : 4,
                 CancellationToken = cancellationToken,
             },
             async (series, ct) =>
