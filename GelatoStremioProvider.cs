@@ -25,9 +25,16 @@ public class GelatoStremioProvider(
     };
 
     private static readonly TimeSpan MetaCacheTtl = TimeSpan.FromMinutes(5);
+
+    /// <summary>
+    /// How old a cached meta may be when the caller asks for a fresh one (the tree sync). A copy
+    /// fetched this recently is as fresh as a new request; older ones are asked again.
+    /// </summary>
+    public static readonly TimeSpan FreshMaxAge = TimeSpan.FromMinutes(1);
+
     private readonly System.Collections.Concurrent.ConcurrentDictionary<
         string,
-        (StremioMeta Meta, DateTime Expiry)
+        (StremioMeta Meta, DateTime Expiry, DateTime Fetched)
     > _metaCache = new(StringComparer.OrdinalIgnoreCase);
 
     private readonly System.Collections.Concurrent.ConcurrentDictionary<
@@ -35,13 +42,21 @@ public class GelatoStremioProvider(
         string?
     > _tmdbIdByImdbId = new(StringComparer.OrdinalIgnoreCase);
 
-    private StremioMeta? GetCachedMeta(string id)
+    private StremioMeta? GetCachedMeta(string id, bool fresh)
     {
-        if (_metaCache.TryGetValue(id, out var entry) && entry.Expiry > DateTime.UtcNow)
-            return entry.Meta;
-        _metaCache.TryRemove(id, out _);
+        var now = DateTime.UtcNow;
+        if (_metaCache.TryGetValue(id, out var entry))
+        {
+            if (CachedMetaUsable(entry.Expiry, entry.Fetched, now, fresh))
+                return entry.Meta;
+            if (entry.Expiry <= now)
+                _metaCache.TryRemove(id, out _);
+        }
         return null;
     }
+
+    public static bool CachedMetaUsable(DateTime expiry, DateTime fetched, DateTime now, bool fresh) =>
+        expiry > now && (!fresh || now - fetched <= FreshMaxAge);
 
     private const string AioStreamsUserAgent = "AIOStreams/1.0";
 
@@ -207,14 +222,14 @@ public class GelatoStremioProvider(
         bool fresh = false
     )
     {
-        var cached = fresh ? null : GetCachedMeta(id);
+        var cached = GetCachedMeta(id, fresh);
         if (cached is not null)
             return cached;
 
         var url = BuildUrl(["meta", mediaType.ToString().ToLower(), id]);
         var r = await GetJsonAsync<StremioMetaResponse>(url);
         if (r?.Meta is { } meta)
-            _metaCache[id] = (meta, DateTime.UtcNow.Add(ttl ?? MetaCacheTtl));
+            _metaCache[id] = (meta, DateTime.UtcNow.Add(ttl ?? MetaCacheTtl), DateTime.UtcNow);
         return r?.Meta;
     }
 
@@ -287,8 +302,9 @@ public class GelatoStremioProvider(
     }
 
     /// <param name="item">The library item.</param>
-    /// <param name="fresh">Ask the addon even when the meta is cached. The tree sync uses it: a
-    /// meta cached by an import a few minutes earlier may already be out of date.</param>
+    /// <param name="fresh">Ask the addon unless the cached meta is under <see cref="FreshMaxAge"/>
+    /// old. The tree sync uses it: a meta cached by an import a few minutes earlier may already be
+    /// out of date.</param>
     public async Task<StremioMeta?> GetMetaAsync(BaseItem item, bool fresh = false)
     {
         // Not a failure: the meta is looked up under the item's other ids too.

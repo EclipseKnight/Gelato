@@ -333,6 +333,8 @@ def sc_comeback(jf, addon, c):
     addon.stage = os.path.join(FIXTURES, "comeback", "import1")
     import_all(jf)
     c.eq("episodes while Ended", len(jf.items("Episode")), 3)
+    # The show comes back later: a meta fetched under a minute ago counts as fresh, so clear it.
+    jf.restart(); jf.login()
     addon.stage = os.path.join(FIXTURES, "comeback", "import2")
     import_all(jf)
     c.eq("series", len(jf.items("Series")), 1)
