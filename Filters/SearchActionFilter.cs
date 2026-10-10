@@ -182,6 +182,13 @@ public class SearchActionFilter(
     private const int MaxCountedLibraryMatches = 5000;
 
     /// <summary>
+    /// The request's user, or null for a request without one (an API key with no user id).
+    /// Jellyfin's user manager throws on an empty id, which answered such a search with an error.
+    /// </summary>
+    private Jellyfin.Database.Implementations.Entities.User? UserOrNull(Guid userId) =>
+        userId.Equals(Guid.Empty) ? null : userManager.GetUserById(userId);
+
+    /// <summary>
     /// How many items the library search matches for this request, whatever the page: the
     /// providers' hits without a limit, counted under the user and the scope the request has.
     /// </summary>
@@ -217,7 +224,7 @@ public class SearchActionFilter(
             return 0;
 
         return libraryManager.GetCount(
-            new InternalItemsQuery(userManager.GetUserById(userId))
+            new InternalItemsQuery(UserOrNull(userId))
             {
                 ItemIds = hits.Select(h => h.ItemId).ToArray(),
                 IncludeItemTypes = include,
@@ -441,7 +448,7 @@ public class SearchActionFilter(
             EnableImages = true,
             EnableUserData = true,
         };
-        var user = userManager.GetUserById(userId);
+        var user = UserOrNull(userId);
 
         var results = metas
             .Select(meta => (Meta: meta, Item: manager.IntoBaseItem(meta)))

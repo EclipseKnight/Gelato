@@ -36,6 +36,7 @@ class Addon:
     def __init__(self):
         self.stage = None
         self.delay = 0.0
+        self.requests = []
         addon = self
 
         class H(http.server.BaseHTTPRequestHandler):
@@ -44,6 +45,7 @@ class Addon:
 
             def do_GET(self):
                 path = urllib.parse.unquote(urllib.parse.urlparse(self.path).path).lstrip("/")
+                addon.requests.append(path)
                 if addon.delay and path.startswith("stream/"):
                     time.sleep(addon.delay)
                 # A "skip=N" page is past the end: catalogs here are one page.
@@ -200,6 +202,18 @@ class Jellyfin:
     def played(self, user, item_id):
         q = urllib.parse.urlencode({"userId": user})
         return self.call("GET", f"/Items/{item_id}?{q}")["UserData"]["Played"]
+
+    def api_key(self):
+        self.call("POST", "/Auth/Keys?app=scenario")
+        return next(k["AccessToken"] for k in self.call("GET", "/Auth/Keys")["Items"] if k["AppName"] == "scenario")
+
+    def get_status(self, path, token):
+        req = urllib.request.Request(self.base + path, headers={"Authorization": f'MediaBrowser Token="{token}"'})
+        try:
+            with urllib.request.urlopen(req, timeout=60) as r:
+                return r.status, json.loads(r.read() or b"null")
+        except urllib.error.HTTPError as e:
+            return e.code, None
 
     def mark_played(self, user, item_id):
         self.call("POST", f"/UserPlayedItems/{item_id}?userId={user}")
@@ -447,6 +461,40 @@ def sc_aliasclash(jf, addon, c):
     repeat_check(jf, c)
 
 
+def sc_unaired(jf, addon, c):
+    """An episode that hasn't aired gets no stream lookup; an aired one does."""
+    addon.stage = os.path.join(FIXTURES, "unaired")
+    import_all(jf)
+    eps = {e["Name"]: e for e in jf.items("Episode")}
+    c.eq("episodes", sorted(eps), ["Aired", "Not aired"])
+    if len(eps) != 2:
+        return
+    for name in ("Aired", "Not aired"):
+        jf.call("POST", f"/Items/{eps[name]['Id']}/PlaybackInfo?userId={jf.admin}", {})
+    time.sleep(3)
+    asked = [r for r in addon.requests if r.startswith("stream/series/tt0000401")]
+    c.true("stream lookup for the aired episode", any(r.startswith("stream/series/tt0000401:1:1") for r in asked))
+    c.eq("stream lookups for the episode that hasn't aired",
+         [r for r in asked if r.startswith("stream/series/tt0000401:1:2")], [])
+
+
+def sc_search(jf, addon, c):
+    """A search with an API key and no user id is answered, not HTTP 500."""
+    addon.stage = os.path.join(FIXTURES, "unaired")
+    import_all(jf)
+    key = jf.api_key()
+    q = urllib.parse.urlencode({"searchTerm": "Lumen", "Recursive": "true", "IncludeItemTypes": "Movie,Series", "Limit": 20})
+    code, body = jf.get_status("/Items?" + q, key)
+    c.eq("API-key search without a user id", code, 200)
+    names = sorted(i["Name"] for i in (body or {}).get("Items", []))
+    c.eq("results", names, ["Lumen", "Lumen Film"])
+    q = urllib.parse.urlencode({"searchTerm": "Lumen", "Recursive": "true", "IncludeItemTypes": "Movie,Series",
+                                "Limit": 20, "userId": jf.admin})
+    code, body = jf.get_status("/Items?" + q, jf.token)
+    c.eq("user search", code, 200)
+    c.eq("user results", sorted(i["Name"] for i in (body or {}).get("Items", [])), ["Lumen", "Lumen Film"])
+
+
 SCENARIOS = {
     "initiald": sc_initiald,
     "sharedtmdb": sc_sharedtmdb,
@@ -458,6 +506,8 @@ SCENARIOS = {
     "blackclover": sc_blackclover,
     "reattach": sc_reattach,
     "aliasclash": sc_aliasclash,
+    "unaired": sc_unaired,
+    "search": sc_search,
 }
 
 

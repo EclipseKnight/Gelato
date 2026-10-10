@@ -1,0 +1,9 @@
+{
+ "streams": [
+  {
+   "name": "Fake",
+   "title": "Fake 1080p",
+   "url": "http://127.0.0.1:9/none.mkv"
+  }
+ ]
+}

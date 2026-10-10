@@ -1,0 +1,75 @@
+{
+ "id": "com.aiostreams.viren070",
+ "name": "AIOStreams",
+ "version": "1.0.0",
+ "types": [
+  "movie",
+  "series"
+ ],
+ "resources": [
+  {
+   "name": "catalog",
+   "types": [
+    "movie",
+    "series"
+   ],
+   "idPrefixes": [
+    "tt",
+    "kitsu",
+    "mal"
+   ]
+  },
+  {
+   "name": "meta",
+   "types": [
+    "movie",
+    "series"
+   ],
+   "idPrefixes": [
+    "tt",
+    "kitsu",
+    "mal"
+   ]
+  },
+  {
+   "name": "stream",
+   "types": [
+    "movie",
+    "series"
+   ],
+   "idPrefixes": [
+    "tt",
+    "kitsu",
+    "mal"
+   ]
+  }
+ ],
+ "catalogs": [
+  {
+   "type": "series",
+   "id": "anime",
+   "name": "Anime",
+   "extra": [
+    {
+     "name": "search"
+    },
+    {
+     "name": "skip"
+    }
+   ]
+  },
+  {
+   "type": "movie",
+   "id": "films",
+   "name": "Films",
+   "extra": [
+    {
+     "name": "search"
+    },
+    {
+     "name": "skip"
+    }
+   ]
+  }
+ ]
+}
