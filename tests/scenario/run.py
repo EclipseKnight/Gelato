@@ -359,6 +359,20 @@ def sc_blackclover(jf, addon, c):
     repeat_check(jf, c)
 
 
+def sc_filedgrow(jf, addon, c):
+    """A filed season is not copied when the show's own data later lists that season."""
+    addon.stage = os.path.join(FIXTURES, "filedgrow", "stage1")
+    import_all(jf)
+    jf.restart(); jf.login()
+    addon.stage = os.path.join(FIXTURES, "filedgrow", "stage2")
+    import_all(jf)
+    eps = jf.items("Episode")
+    s2 = sorted((e.get("ParentIndexNumber"), e.get("IndexNumber")) for e in eps if e.get("ParentIndexNumber") == 2)
+    c.eq("season 2 once", s2, [(2, 1), (2, 2)])
+    c.eq("episodes", len(eps), 5)
+    repeat_check(jf, c)
+
+
 def sc_splitsafe(jf, addon, c):
     """No parent: its own show. Parent already has the season: no copy, nothing moved."""
     addon.stage = os.path.join(FIXTURES, "splitsafe")
@@ -642,6 +656,7 @@ SCENARIOS = {
     "cinemeta": sc_cinemeta,
     "rekeyguard": sc_rekeyguard,
     "splitsafe": sc_splitsafe,
+    "filedgrow": sc_filedgrow,
     "apikey": sc_apikey,
     "dupreport": sc_dupreport,
     "exclude": sc_exclude,

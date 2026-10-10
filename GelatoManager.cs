@@ -2065,6 +2065,10 @@ public sealed class GelatoManager(
             var existingEpisodes = existingEpisodesBySeason.TryGetValue(seasonIndex, out var eps)
                 ? eps
                 : [];
+            // A season filed from a split catalogue entry (TryPlaceSplitSeasonAsync) keeps that
+            // entry's episode ids. When the show's own data later lists the season, its numbers
+            // need not line up, so adding its episodes would show the season twice.
+            var holdsFiled = existingEpisodes.Values.Any(e => SplitSeason.IsFiledFromOtherEntry(e.Path, seriesMeta.Id));
             foreach (var epMeta in seasonGroup)
             {
                 ct.ThrowIfCancellationRequested();
@@ -2089,6 +2093,17 @@ public sealed class GelatoManager(
                         _log.LogTrace("Updated episode {EpisodeName}", existingEpisode.Name);
                         updatedEpisodes.Add(existingEpisode);
                     }
+                    continue;
+                }
+
+                if (holdsFiled)
+                {
+                    _log.LogDebug(
+                        "Season {SeasonIndex} of {SeriesName} holds filed episodes; not adding {EpisodeName}",
+                        seasonIndex,
+                        series.Name,
+                        epMeta.GetName()
+                    );
                     continue;
                 }
 
