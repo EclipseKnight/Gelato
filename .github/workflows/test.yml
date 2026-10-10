@@ -47,4 +47,5 @@ jobs:
         run: docker pull jellyfin/jellyfin:12.1
 
       - name: Scenario runs
-        run: python3 tests/scenario/run.py
+        # The container writes its data folder as root; reattach reads the database directly.
+        run: sudo -E env "PATH=$PATH" python3 tests/scenario/run.py
