@@ -1,0 +1,27 @@
+{
+ "meta": {
+  "id": "kitsu:188",
+  "type": "series",
+  "name": "Initial D Stage 4",
+  "releaseInfo": "2020",
+  "year": 2020,
+  "status": "Ended",
+  "videos": [
+   {
+    "id": "kitsu:188:1",
+    "title": "Episode 1",
+    "season": 1,
+    "episode": 1,
+    "released": "2020-01-01T00:00:00.000Z"
+   },
+   {
+    "id": "kitsu:188:2",
+    "title": "Episode 2",
+    "season": 1,
+    "episode": 2,
+    "released": "2020-01-02T00:00:00.000Z"
+   }
+  ],
+  "_tvdbId": "72025"
+ }
+}

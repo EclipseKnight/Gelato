@@ -1,0 +1,20 @@
+{
+ "metas": [
+  {
+   "id": "tt0000301",
+   "type": "movie",
+   "name": "No Streams Film",
+   "releaseInfo": "2020",
+   "year": 2020,
+   "released": "2020-01-01T00:00:00.000Z"
+  },
+  {
+   "id": "tt0000302",
+   "type": "movie",
+   "name": "Slow Film",
+   "releaseInfo": "2020",
+   "year": 2020,
+   "released": "2020-01-01T00:00:00.000Z"
+  }
+ ]
+}
