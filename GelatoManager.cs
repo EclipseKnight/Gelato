@@ -343,7 +343,8 @@ public sealed class GelatoManager(
             return found;
 
         // Nothing under the native id: the title may be in the library from a catalogue without
-        // native ids (Cinemeta), by its IMDb id only.
+        // native ids (Cinemeta), by its IMDb id only. A series only for an entry the anime
+        // mapping list names as season 1: later seasons and OVAs share the show's IMDb id.
         if (
             CatalogIdentity.NativeId(item.ProviderIds) is not { } native
             || item.GetProviderId(MetadataProvider.Imdb) is not { Length: > 0 } imdb
@@ -353,7 +354,24 @@ public sealed class GelatoManager(
         return libraryManager
             .GetItemList(query)
             .Where(NotStream)
-            .FirstOrDefault(x => CatalogIdentity.ImdbMatchIsSame(x.ProviderIds, native));
+            .FirstOrDefault(x =>
+                CatalogIdentity.ImdbMatchIsSame(x.ProviderIds, native, x is Series, AnimeMap(user))
+            );
+    }
+
+    /// <summary>The anime mapping list if it is loaded or saved; never downloads.</summary>
+    private AnimeSeasonMap? AnimeMap(User? user = null)
+    {
+        try
+        {
+            var cfg = GelatoPlugin.Instance!.GetConfig(user?.Id ?? Guid.Empty);
+            return AnimeSeasonMapStore.Peek(cfg.AnimeMappingUrl, Path.Combine(appPaths.DataPath, "gelato"));
+        }
+        catch (Exception ex)
+        {
+            _log.LogDebug(ex, "Anime mapping list not readable");
+            return null;
+        }
     }
 
     /// <summary>
@@ -396,7 +414,7 @@ public sealed class GelatoManager(
             // do a precheck as loading metadata is expensive
             existing = Exist(meta, user);
 
-            if (existing is not null)
+            if (existing is not null && await ReconcileIdentityAsync(existing, meta, ct).ConfigureAwait(false))
             {
                 _log.LogDebug(
                     "found existing {Kind}: {Id} for {Name}",
@@ -404,7 +422,6 @@ public sealed class GelatoManager(
                     existing.Id,
                     existing.Name
                 );
-                await ReconcileIdentityAsync(existing, meta, ct).ConfigureAwait(false);
                 await RefreshStatusAsync(existing, meta, ct).ConfigureAwait(false);
                 return (existing, false);
             }
@@ -443,7 +460,7 @@ public sealed class GelatoManager(
 
         existing = Exist(meta, user);
 
-        if (existing is not null)
+        if (existing is not null && await ReconcileIdentityAsync(existing, meta, ct).ConfigureAwait(false))
         {
             _log.LogDebug(
                 "found existing {Kind}: {Id} for {Name}",
@@ -451,7 +468,6 @@ public sealed class GelatoManager(
                 existing.Id,
                 existing.Name
             );
-            await ReconcileIdentityAsync(existing, meta, ct).ConfigureAwait(false);
             await RefreshStatusAsync(existing, meta, ct).ConfigureAwait(false);
             return (existing, false);
         }
@@ -576,7 +592,7 @@ public sealed class GelatoManager(
     public static string? IsExcluded(PluginConfiguration cfg, StremioMeta meta) =>
         ExcludeList.Match(ExcludeList.Parse(cfg.ExcludedIds), meta.Id, meta.GetProviderIds());
 
-    /// <summary>Whether the anime mapping links this catalogue entry to a season of a show.</summary>
+    /// <summary>Whether the anime mapping links this catalogue entry to a later season (2 and up) of a show.</summary>
     public async Task<bool> IsMappedSeasonAsync(PluginConfiguration cfg, StremioMeta meta, CancellationToken ct)
     {
         if (!cfg.FileSplitSeasons || meta.Type != StremioMediaType.Series)
@@ -585,7 +601,7 @@ public sealed class GelatoManager(
         {
             var folder = Path.Combine(appPaths.DataPath, "gelato");
             var map = await AnimeSeasonMapStore.GetAsync(cfg.AnimeMappingUrl, folder, _log, ct).ConfigureAwait(false);
-            return map?.Find(meta.Id) is { Season: > 0 };
+            return map?.Find(meta.Id) is { Season: > 1 };
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -613,11 +629,11 @@ public sealed class GelatoManager(
         {
             var folder = Path.Combine(appPaths.DataPath, "gelato");
             var map = await AnimeSeasonMapStore.GetAsync(cfg.AnimeMappingUrl, folder, _log, ct).ConfigureAwait(false);
-            if (map?.Find(meta.Id) is not { } link)
+            // Season 1 is the show itself: never placed into another show.
+            if (map?.Find(meta.Id) is not { Season: > 1 } link)
                 return null;
 
-            // Already in the library as its own show: leave it (existing split shows are moved
-            // by an admin-confirmed step, not here).
+            // Already in the library as its own show: leave it.
             // Matched on its own catalogue id only: its other ids (a TVDB id copied from the
             // show) would find the show itself.
             if (
@@ -646,6 +662,8 @@ public sealed class GelatoManager(
                     .OfType<Series>()
                     .Where(s => string.Equals(s.GetProviderId(provider), value, StringComparison.OrdinalIgnoreCase))
                     .Where(s => !string.Equals(s.GetProviderId("Stremio"), meta.Id, StringComparison.OrdinalIgnoreCase))
+                    // Another later season kept as its own show carries the show's TVDB id too.
+                    .Where(s => map.Find(s.GetProviderId("Stremio")) is not { Season: > 1 })
                     .ToList();
 
             // The show by its TVDB id; a show that has none stored yet by the IMDb id the list
@@ -682,30 +700,25 @@ public sealed class GelatoManager(
             if (decision == SplitSeason.Decision.OwnShow)
                 return null;
 
-            if (decision == SplitSeason.Decision.File)
-            {
-                var copy = full!.ShallowCopy();
-                copy.Videos = videos
-                    .Select(v =>
-                    {
-                        var c = v.ShallowCopy();
-                        c.Season = link.Season;
-                        return c;
-                    })
-                    .ToList();
-                await SyncSeriesTreesAsync(cfg, copy, ct, existingSeries: parent).ConfigureAwait(false);
-            }
+            var copy = full!.ShallowCopy();
+            copy.Videos = videos
+                .Select(v =>
+                {
+                    var c = v.ShallowCopy();
+                    c.Season = link.Season;
+                    return c;
+                })
+                .ToList();
+            await SyncSeriesTreesAsync(cfg, copy, ct, existingSeries: parent).ConfigureAwait(false);
 
             _log.LogInformation(
-                "{Entry} ({Id}) placed as season {Season} of {Parent} ({ParentId}){Note}",
+                "{Entry} ({Id}) placed as season {Season} of {Parent} ({ParentId}), {Count} episode(s) filed",
                 meta.Name,
                 meta.Id,
                 link.Season,
                 parent.Name,
                 parent.Id,
-                decision == SplitSeason.Decision.File
-                    ? $", {videos.Count} episode(s) filed"
-                    : ", the show has that season already"
+                videos.Count
             );
             return parent;
         }
@@ -750,31 +763,64 @@ public sealed class GelatoManager(
     /// A found item takes the IMDb id the catalogue gives it now, when the catalogue identifies it
     /// by a native id and that IMDb id changed. The old one is kept as an alias (see
     /// <see cref="CatalogIdentity"/>). Items identified by their IMDb id are never re-keyed.
+    /// Returns false when the item was found by its IMDb id but another entry took it first: it
+    /// is not this title.
     /// </summary>
-    private async Task ReconcileIdentityAsync(BaseItem existing, StremioMeta meta, CancellationToken ct)
+    private async Task<bool> ReconcileIdentityAsync(BaseItem existing, StremioMeta meta, CancellationToken ct)
     {
         try
         {
             if (IntoBaseItem(meta) is not { } incoming)
-                return;
+                return true;
             if (CatalogIdentity.NativeId(incoming.ProviderIds) is not { } native)
-                return;
+                return true;
 
             // Found by its IMDb id and carrying no native id yet (added from a catalogue without
-            // one): take the native id, so the next lookup finds it by that.
+            // one): take the native id, so the next lookup finds it by that. Entries imported in
+            // parallel may have found it at the same time: one at a time, checked against the
+            // saved ids, the first one takes it.
             if (CatalogIdentity.NativeId(existing.ProviderIds) is null)
             {
-                existing.SetProviderId(native.Key, native.Value);
-                await existing
-                    .UpdateToRepositoryAsync(ItemUpdateType.MetadataEdit, ct)
-                    .ConfigureAwait(false);
-                _log.LogInformation(
-                    "{Name} ({Id}): found by its IMDb id, now also identified by {Native} {NativeId}",
-                    existing.Name,
-                    existing.Id,
-                    native.Key,
-                    native.Value
-                );
+                await ClaimGate.WaitAsync(ct).ConfigureAwait(false);
+                try
+                {
+                    var saved =
+                        libraryManager
+                            .GetItemList(new InternalItemsQuery { ItemIds = [existing.Id], IsDeadPerson = true })
+                            .FirstOrDefault() ?? existing;
+                    switch (CatalogIdentity.Claim(saved.ProviderIds, native))
+                    {
+                        case CatalogIdentity.ClaimResult.Taken:
+                            _log.LogInformation(
+                                "{Name} ({Id}) was taken by another entry; {Native} {NativeId} is not it",
+                                existing.Name,
+                                existing.Id,
+                                native.Key,
+                                native.Value
+                            );
+                            return false;
+                        case CatalogIdentity.ClaimResult.Ours:
+                            existing.SetProviderId(native.Key, native.Value);
+                            break;
+                        default:
+                            existing.SetProviderId(native.Key, native.Value);
+                            await existing
+                                .UpdateToRepositoryAsync(ItemUpdateType.MetadataEdit, ct)
+                                .ConfigureAwait(false);
+                            _log.LogInformation(
+                                "{Name} ({Id}): found by its IMDb id, now also identified by {Native} {NativeId}",
+                                existing.Name,
+                                existing.Id,
+                                native.Key,
+                                native.Value
+                            );
+                            break;
+                    }
+                }
+                finally
+                {
+                    ClaimGate.Release();
+                }
             }
 
             if (
@@ -784,12 +830,12 @@ public sealed class GelatoManager(
                     StringComparison.OrdinalIgnoreCase
                 )
             )
-                return;
+                return true;
 
             var oldImdb = existing.GetProviderId(MetadataProvider.Imdb);
             var newImdb = incoming.GetProviderId(MetadataProvider.Imdb);
             if (!CatalogIdentity.NeedsRekey(oldImdb, newImdb))
-                return;
+                return true;
 
             // Another item has the new IMDb id as its own: taking it would give two items one
             // id. Leave both as they are; the duplicates report shows them.
@@ -828,7 +874,7 @@ public sealed class GelatoManager(
                     holder.Id,
                     oldImdb
                 );
-                return;
+                return true;
             }
 
             var ids = new Dictionary<string, string>(existing.ProviderIds, StringComparer.OrdinalIgnoreCase);
@@ -862,7 +908,11 @@ public sealed class GelatoManager(
         {
             _log.LogWarning(ex, "Could not update the ids of {Name} ({Id})", existing.Name, existing.Id);
         }
+        return true;
     }
+
+    /// <summary>One native-id claim at a time (see <see cref="ReconcileIdentityAsync"/>).</summary>
+    private static readonly SemaphoreSlim ClaimGate = new(1, 1);
 
     /// <summary>
     /// An item's IMDb id is its own: other items that keep it as an alias lose that alias.
@@ -953,7 +1003,7 @@ public sealed class GelatoManager(
             return found;
 
         // Same fallback as FindExistingItem: by the IMDb id, only a title with no native id or
-        // the same one.
+        // the same one (see CatalogIdentity.ImdbMatchIsSame).
         if (
             CatalogIdentity.NativeId(providerIds) is not { } native
             || !providerIds.TryGetValue(nameof(MetadataProvider.Imdb), out var imdb)
@@ -965,7 +1015,9 @@ public sealed class GelatoManager(
                 kind,
                 parent
             )
-            .FirstOrDefault(x => CatalogIdentity.ImdbMatchIsSame(x.ProviderIds, native));
+            .FirstOrDefault(x =>
+                CatalogIdentity.ImdbMatchIsSame(x.ProviderIds, native, kind == BaseItemKind.Series, AnimeMap())
+            );
     }
 
     /// <summary>
@@ -1838,14 +1890,12 @@ public sealed class GelatoManager(
                 return null;
             }
 
-            if (
-                GetByProviderIds(
-                    tmpSeries.ProviderIds,
-                    tmpSeries.GetBaseItemKind(),
-                    seriesRootFolder
-                )
-                is not Series found
-            )
+            var found = GetByProviderIds(tmpSeries.ProviderIds, tmpSeries.GetBaseItemKind(), seriesRootFolder) as Series;
+            // Found by its IMDb id but taken by another entry meanwhile: not this show.
+            if (found is not null && !await ReconcileIdentityAsync(found, seriesMeta, ct).ConfigureAwait(false))
+                found = null;
+
+            if (found is null)
             {
                 tmpSeries.Id = tmpSeries.Id == Guid.Empty ? Guid.NewGuid() : tmpSeries.Id;
 
@@ -1869,7 +1919,6 @@ public sealed class GelatoManager(
             else
             {
                 series = found;
-                await ReconcileIdentityAsync(series, seriesMeta, ct).ConfigureAwait(false);
                 await RefreshStatusAsync(series, seriesMeta, ct).ConfigureAwait(false);
             }
         }

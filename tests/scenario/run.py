@@ -378,16 +378,16 @@ def sc_filedgrow(jf, addon, c):
 
 
 def sc_splitsafe(jf, addon, c):
-    """No parent: its own show. Parent already has the season: no copy, nothing moved."""
+    """No parent: its own show. Mapped to season 1: its own show, nothing moved."""
     addon.stage = os.path.join(FIXTURES, "splitsafe")
     import_all(jf)
-    c.eq("series", sorted(s["Name"] for s in jf.items("Series")), ["Orphan Season 2", "Partwise"])
+    c.eq("series", sorted(s["Name"] for s in jf.items("Series")), ["Orphan Season 2", "Partwise", "Partwise Part 2"])
     eps = jf.items("Episode")
     part = sorted((e.get("ParentIndexNumber"), e.get("IndexNumber"), e.get("Path", "").rsplit("/", 1)[-1])
                   for e in eps if e.get("SeriesName") == "Partwise")
     c.eq("Partwise keeps its own episodes", part,
          [(1, 1, "tt0000502:1:1"), (1, 2, "tt0000502:1:2"), (1, 3, "tt0000502:1:3")])
-    c.eq("episodes", len(eps), 5)
+    c.eq("episodes", len(eps), 7)
     repeat_check(jf, c)
 
 
@@ -587,6 +587,26 @@ def sc_cinemeta(jf, addon, c):
     repeat_check(jf, c)
 
 
+def sc_imdbclaim(jf, addon, c):
+    """An OVA with the IMDb id of a show known by that id only doesn't take it; season 1 does."""
+    addon.stage = os.path.join(FIXTURES, "cinemeta", "stage1")
+    import_all(jf)
+    first = jf.items("Series")
+    addon.stage = os.path.join(FIXTURES, "imdbclaim")
+    import_all(jf)
+    c.eq("series after the OVA", sorted(s["Name"] for s in jf.items("Series")), ["Cine Show", "Cine Show OVA"])
+    c.eq("Cine Show not taken by the OVA", {k.lower(): v for k, v in ids_of(jf, "Cine Show").items()}.get("kitsu"), None)
+    jf.restart(); jf.login()
+    addon.stage = os.path.join(FIXTURES, "cinemeta", "stage2")
+    import_all(jf)
+    series = jf.items("Series")
+    c.eq("series after season 1", sorted(s["Name"] for s in series), ["Cine Show", "Cine Show OVA"])
+    c.eq("season 1 found the show", [s["Id"] for s in series if s["Name"] == "Cine Show"], [s["Id"] for s in first])
+    c.eq("native id stored", {k.lower(): v for k, v in ids_of(jf, "Cine Show").items()}.get("kitsu"), "601")
+    c.eq("episodes", len(jf.items("Episode")), 4)
+    repeat_check(jf, c)
+
+
 def sc_rekeyguard(jf, addon, c):
     """An IMDb id another show already has is not taken over."""
     addon.stage = os.path.join(FIXTURES, "rekeyguard", "stage1")
@@ -658,6 +678,7 @@ SCENARIOS = {
     "unaired": sc_unaired,
     "search": sc_search,
     "cinemeta": sc_cinemeta,
+    "imdbclaim": sc_imdbclaim,
     "rekeyguard": sc_rekeyguard,
     "splitsafe": sc_splitsafe,
     "filedgrow": sc_filedgrow,

@@ -121,13 +121,17 @@ public static class SplitSeason
         return native && !id.StartsWith(syncingId + ":", StringComparison.OrdinalIgnoreCase);
     }
 
+    /// <summary>
+    /// The order deferred entries are placed in: by catalogue id, numbers in numeric order (the
+    /// earlier part usually has the lower id), so the result doesn't depend on import order.
+    /// </summary>
+    public static IEnumerable<StremioMeta> FilingOrder(IEnumerable<StremioMeta> entries) =>
+        entries.OrderBy(m => m.Id.Length).ThenBy(m => m.Id, StringComparer.OrdinalIgnoreCase);
+
     public enum Decision
     {
         /// <summary>Import as its own show, as before.</summary>
         OwnShow,
-
-        /// <summary>The parent has the season already: no copy, nothing filed.</summary>
-        ParentHasSeason,
 
         /// <summary>File the entry's episodes as the season of the parent.</summary>
         File,
@@ -146,16 +150,16 @@ public static class SplitSeason
         int parentSeasonFiledFromEntry
     )
     {
-        // Only with a confident mapping: one show with that TVDB id, a real season, and an entry
-        // that is one season itself.
-        if (link is null || link.Season < 1 || parents != 1)
+        // Only with a confident mapping: one show with that TVDB id, a later season (season 1
+        // is the show itself), and an entry that is one season itself.
+        if (link is null || link.Season < 2 || parents != 1)
             return Decision.OwnShow;
         if (entrySeasons.Count != 1)
             return Decision.OwnShow;
-        // Episodes the parent got from elsewhere are never moved or renumbered; the entry would
-        // be the same season twice, so no copy either.
+        // Episodes the parent got from elsewhere are never moved or renumbered, and the entry is
+        // not dropped either (a second cour of the same season): it stays a show of its own.
         if (parentSeasonEpisodes > parentSeasonFiledFromEntry)
-            return Decision.ParentHasSeason;
+            return Decision.OwnShow;
         return Decision.File;
     }
 }

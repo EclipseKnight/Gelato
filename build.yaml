@@ -40,9 +40,14 @@ changelog: >
   An anime catalogue entry that the anime id mapping list (FileSplitSeasons, AnimeMappingUrl)
   names as a season of a show in the library is filed as that season of the show instead of
   becoming a show of its own; episodes the show has already are never moved or renumbered.
+  Only seasons 2 and up are filed, in catalogue id order, so the show itself is never taken
+  over by its later season and the result doesn't depend on import order; an entry whose season
+  the show already has (a second cour) stays a show of its own instead of being left out.
   A catalogue item with a native id that is already in the library by its IMDb id only (added
   from a catalogue without native ids, like Cinemeta) is matched and takes the native id
-  instead of being added again. An IMDb id change is not applied when another item already has
+  instead of being added again. For a series this needs the anime id mapping list to name the
+  entry as season 1, so a later season or OVA that shares the show's IMDb id stays its own show,
+  and two entries imported at the same time can't both take the same show. An IMDb id change is not applied when another item already has
   that id. Episodes due within the next day get a stream lookup, and skipping an unaired one is
   not remembered as no streams.
   A read-only "Possible duplicates report" task (weekly; GET /gelato/duplicates) lists items

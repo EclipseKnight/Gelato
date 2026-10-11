@@ -30,5 +30,16 @@
   "imdb_id": [
    "tt0000502"
   ]
+ },
+ {
+  "type": "TV",
+  "kitsu_id": 601,
+  "tvdb_id": 900601,
+  "season": {
+   "tvdb": 1
+  },
+  "imdb_id": [
+   "tt0000601"
+  ]
  }
 ]

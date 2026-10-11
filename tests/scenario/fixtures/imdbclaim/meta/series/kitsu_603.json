@@ -1,0 +1,19 @@
+{
+ "meta": {
+  "id": "kitsu:603",
+  "type": "series",
+  "name": "Cine Show OVA",
+  "releaseInfo": "2021-2021",
+  "status": "Ended",
+  "imdb_id": "tt0000601",
+  "videos": [
+   {
+    "id": "kitsu:603:1",
+    "title": "Episode 1",
+    "season": 1,
+    "episode": 1,
+    "released": "2021-01-01T00:00:00.000Z"
+   }
+  ]
+ }
+}

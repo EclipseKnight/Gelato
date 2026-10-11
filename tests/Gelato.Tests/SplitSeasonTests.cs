@@ -66,8 +66,21 @@ public class SplitSeasonTests
         Assert.Equal(SplitSeason.Decision.File, SplitSeason.Decide(S2, 1, [1], 12, 12));
 
     [Fact]
-    public void Parent_with_its_own_episodes_in_that_season_gets_nothing_moved() =>
-        Assert.Equal(SplitSeason.Decision.ParentHasSeason, SplitSeason.Decide(S2, 1, [1], 13, 0));
+    public void Parent_with_its_own_episodes_in_that_season_keeps_them_and_the_entry_is_its_own_show() =>
+        Assert.Equal(SplitSeason.Decision.OwnShow, SplitSeason.Decide(S2, 1, [1], 13, 0));
+
+    [Fact]
+    public void Season_one_is_the_show_itself_and_never_filed() =>
+        Assert.Equal(SplitSeason.Decision.OwnShow, SplitSeason.Decide(new(331753, 1), 1, [1], 0, 0));
+
+    [Fact]
+    public void Deferred_entries_are_placed_in_id_order_whatever_order_they_came_in()
+    {
+        static StremioMeta M(string id) => new() { Id = id };
+        string[] expected = ["mal:9", "mal:10", "mal:61967", "kitsu:50024"];
+        Assert.Equal(expected, SplitSeason.FilingOrder([M("kitsu:50024"), M("mal:61967"), M("mal:10"), M("mal:9")]).Select(m => m.Id));
+        Assert.Equal(expected, SplitSeason.FilingOrder([M("mal:10"), M("mal:9"), M("kitsu:50024"), M("mal:61967")]).Select(m => m.Id));
+    }
 
     [Theory]
     [InlineData(0)]

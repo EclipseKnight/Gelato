@@ -213,7 +213,9 @@ public class CatalogImportService(
                 skip += page.Count;
             }
 
-            foreach (var meta in deferred)
+            // In id order, not the order the parallel pass put them aside: when two entries are
+            // the same season (two cours), the same one is filed on every run.
+            foreach (var meta in SplitSeason.FilingOrder(deferred))
             {
                 await ImportOne(meta, ct, false).ConfigureAwait(false);
             }
