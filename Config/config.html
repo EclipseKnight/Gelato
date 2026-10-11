@@ -338,7 +338,7 @@
                 report = await window.ApiClient.getJSON(window.ApiClient.getUrl('gelato/duplicates'));
               } catch (e) {
                 $('#dupSummary').textContent = 'No report yet. Use "Run report now".';
-                return;
+                return false;
               }
               const findings = report.findings || report.Findings || [];
               allItems = findings.flatMap((f) => f.Items ?? f.items ?? []);
@@ -372,24 +372,48 @@
                 html += `</details>`;
               }
               $('#dupList').innerHTML = html;
+              return true;
             }
 
             async function runReport() {
+              const btn = $('#btnDupRun');
+              btn.disabled = true;
               try {
                 const tasks = await window.ApiClient.getJSON(window.ApiClient.getUrl('ScheduledTasks'));
                 const task = tasks.find((t) => t.Key === 'GelatoDuplicatesReport');
                 if (!task) throw new Error('task not found');
+                if (task.State !== 'Idle') {
+                  $('#dupSummary').textContent = 'The report is already running. Use "Reload" when it has finished.';
+                  return;
+                }
+                // Only a result that ends after this POST belongs to this run.
+                const lastEnd = task.LastExecutionResult?.EndTimeUtc ?? null;
                 await window.ApiClient.ajax({ type: 'POST', url: window.ApiClient.getUrl('ScheduledTasks/Running/' + task.Id) });
                 $('#dupSummary').textContent = 'Report running…';
+                let status = null;
                 for (let n = 0; n < 120; n++) {
                   await new Promise((r) => setTimeout(r, 3000));
                   const t = await window.ApiClient.getJSON(window.ApiClient.getUrl('ScheduledTasks/' + task.Id));
-                  if (t.State === 'Idle') break;
+                  if (t.State === 'Idle' && (t.LastExecutionResult?.EndTimeUtc ?? null) !== lastEnd) {
+                    status = t.LastExecutionResult?.Status ?? '';
+                    break;
+                  }
                 }
-                await loadReport();
+                if (status === null) {
+                  $('#dupSummary').textContent = 'The report is still running. Use "Reload" when it has finished.';
+                  return;
+                }
+                const loaded = await loadReport();
+                if (!status)
+                  $('#dupSummary').textContent += ' (The server did not say how the run ended.)';
+                else if (status !== 'Completed')
+                  $('#dupSummary').textContent = `The report run ended with status ${status}; `
+                    + (loaded ? 'the report shown is from an earlier run.' : 'there is no earlier report.') + ' See the server log.';
               } catch (e) {
                 console.error(e);
                 Dashboard.alert('Could not run the duplicates report.');
+              } finally {
+                btn.disabled = false;
               }
             }
 
@@ -397,7 +421,7 @@
               const cfg = await window.ApiClient.getPluginConfiguration(pluginId);
               const list = cfg.ExcludedIds || [];
               $('#dupExcluded').innerHTML = list.length
-                ? list.map((e, n) => `<div style="display: flex; gap: .6em; align-items: center;"><code>${esc(e)}</code><button is="emby-button" type="button" class="emby-button" data-unexclude="${n}" style="padding: .1em .6em;">Remove</button></div>`).join('')
+                ? list.map((e) => `<div style="display: flex; gap: .6em; align-items: center;"><code>${esc(e)}</code><button is="emby-button" type="button" class="emby-button" data-unexclude="${esc(e)}" style="padding: .1em .6em;">Remove</button></div>`).join('')
                 : '<div class="fieldDescription">Empty.</div>';
             }
 
@@ -446,7 +470,8 @@
             });
             $('#dupExcluded').addEventListener('click', (ev) => {
               const b = ev.target.closest('[data-unexclude]');
-              if (b) changeExcluded((list) => list.filter((_, n) => n !== Number(b.dataset.unexclude)));
+              // By value, not position: the list is read fresh before saving and may have changed since it was drawn.
+              if (b) changeExcluded((list) => list.filter((e) => e !== b.dataset.unexclude));
             });
           })();
         </script>
