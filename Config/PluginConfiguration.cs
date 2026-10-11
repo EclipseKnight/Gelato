@@ -228,6 +228,14 @@ public class UserConfig
             RemuxDbUrl = baseConfig.RemuxDbUrl,
             RemuxDbClientId = baseConfig.RemuxDbClientId,
             UserConfigs = baseConfig.UserConfigs,
+            // The exclude list holds for every user: a user with their own settings must not get
+            // excluded titles created.
+            ExcludedIds = baseConfig.ExcludedIds,
+            // Altffour's own settings, also server-wide.
+            FileSplitSeasons = baseConfig.FileSplitSeasons,
+            FullSeriesSyncDays = baseConfig.FullSeriesSyncDays,
+            AnimeMappingUrl = baseConfig.AnimeMappingUrl,
+            LastFullSeriesSync = baseConfig.LastFullSeriesSync,
         };
     }
 }

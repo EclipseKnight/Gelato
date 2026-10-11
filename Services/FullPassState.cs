@@ -14,7 +14,7 @@ public static class FullPassState
         try
         {
             var text = File.ReadAllText(Path.Combine(folder, FileName)).Trim();
-            if (DateTime.TryParse(text, null, System.Globalization.DateTimeStyles.RoundtripKind, out var t))
+            if (DateTime.TryParseExact(text, "O", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.RoundtripKind, out var t))
                 return t;
         }
         catch (IOException) { }
@@ -22,9 +22,23 @@ public static class FullPassState
         return fallback;
     }
 
-    public static void Write(string folder, DateTime utc)
+    /// <summary>
+    /// Saves the time (temp file, then move). False when the folder can't be written: the tree
+    /// sync goes on, and the weekly pass simply counts as not done yet.
+    /// </summary>
+    public static bool Write(string folder, DateTime utc)
     {
-        Directory.CreateDirectory(folder);
-        File.WriteAllText(Path.Combine(folder, FileName), utc.ToString("O"));
+        try
+        {
+            Directory.CreateDirectory(folder);
+            var file = Path.Combine(folder, FileName);
+            File.WriteAllText(file + ".tmp", utc.ToString("O"));
+            File.Move(file + ".tmp", file, true);
+            return true;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            return false;
+        }
     }
 }

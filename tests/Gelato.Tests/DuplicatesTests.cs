@@ -30,6 +30,22 @@ public class ExcludeListTests
         Assert.Null(ExcludeList.Match(set, "tt0388629", new Dictionary<string, string> { ["Tmdb"] = "1345529" }));
         Assert.Null(ExcludeList.Match(ExcludeList.Parse(null), "tt1345529", new Dictionary<string, string>()));
     }
+
+    [Fact]
+    public void IdsInsideANoteAreNotEntries()
+    {
+        var set = ExcludeList.Parse(["kitsu:13 # copy of: kitsu:12, kitsu:14", "tt1, tt2; mal:3"]);
+        Assert.Equal(new[] { "kitsu:13", "mal:3", "tt1", "tt2" }, set.OrderBy(x => x).ToArray());
+    }
+
+    [Fact]
+    public void AUserWithOwnSettingsKeepsTheExcludeList()
+    {
+        var server = new Gelato.Config.PluginConfiguration { ExcludedIds = ["kitsu:12"], FileSplitSeasons = false };
+        var user = new Gelato.Config.UserConfig { Url = "u" }.ApplyOverrides(server);
+        Assert.Equal(["kitsu:12"], user.ExcludedIds);
+        Assert.False(user.FileSplitSeasons);
+    }
 }
 
 public class DuplicateReportTests

@@ -36,35 +36,58 @@ public static class MediaInfoCache
     private static readonly object FileLock = new();
     private static string? _file;
     private static DateTime? _lastSave;
+    private static bool _dirty; // under FileLock
+    private static bool _unreadable;
+    private static Timer? _flushTimer;
 
     /// <summary>
     /// The file holds every entry (a few KB to 90 KB each), so it is written at most this often
-    /// rather than on every probe. A restart loses at most this much; it is only a cache.
+    /// rather than on every probe. A skipped write is made by a timer this long after it, and on
+    /// shutdown (<see cref="Flush"/>); it is only a cache.
     /// </summary>
     public static readonly TimeSpan SaveEvery = TimeSpan.FromMinutes(1);
 
-    /// <summary>The cache key, or null when the file can't be told apart from others.</summary>
-    public static string? Key(string? infoHash, int? fileIdx) =>
-        string.IsNullOrWhiteSpace(infoHash) ? null : $"{infoHash.Trim().ToLowerInvariant()}:{fileIdx?.ToString() ?? "-"}";
+    /// <summary>
+    /// The cache key: info hash and file index, or info hash and size when the add-on gave no file
+    /// index (the files of a season pack differ in size). Null when the file can't be told apart
+    /// from others: a hash alone would give every file of a pack one key and each other's tracks.
+    /// </summary>
+    public static string? Key(string? infoHash, int? fileIdx, long? size = null)
+    {
+        if (string.IsNullOrWhiteSpace(infoHash))
+            return null;
+        var hash = infoHash.Trim().ToLowerInvariant();
+        if (fileIdx is not null)
+            return $"{hash}:{fileIdx}";
+        return size is > 0 ? $"{hash}:s{size}" : null;
+    }
 
     public static void Init(string folder)
     {
         lock (FileLock)
         {
-            if (_file is not null)
+            if (_file is not null || _unreadable)
                 return;
-            Directory.CreateDirectory(folder);
-            _file = Path.Combine(folder, "media-info-cache.json");
+            var file = Path.Combine(folder, "media-info-cache.json");
             try
             {
-                if (File.Exists(_file))
-                    foreach (var (k, e) in JsonSerializer.Deserialize<Dictionary<string, Entry>>(File.ReadAllText(_file)) ?? [])
+                Directory.CreateDirectory(folder);
+                if (File.Exists(file))
+                    foreach (var (k, e) in JsonSerializer.Deserialize<Dictionary<string, Entry>>(File.ReadAllText(file)) ?? [])
                         Entries[k] = e;
             }
             catch (JsonException)
             {
                 // A broken file starts the cache over.
             }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException or NotSupportedException)
+            {
+                // Unreadable: keep the cache in memory only until a restart, and leave the file
+                // alone rather than overwrite it with a nearly empty one. Not retried on every key.
+                _unreadable = true;
+                return;
+            }
+            _file = file;
         }
     }
 
@@ -87,6 +110,41 @@ public static class MediaInfoCache
             _lastSave = now;
             Save();
         }
+        else
+        {
+            // Under the lock, so a write that already took its snapshot can't clear this flag.
+            lock (FileLock)
+            {
+                _dirty = true;
+                _flushTimer ??= new Timer(_ => FlushFromTimer(), null, SaveEvery, Timeout.InfiniteTimeSpan);
+            }
+        }
+    }
+
+    private static void FlushFromTimer()
+    {
+        try
+        {
+            lock (FileLock)
+                _flushTimer = null;
+            Flush();
+        }
+        catch (Exception)
+        {
+            // A timer thread must never throw (it would end the server); the next write retries.
+        }
+    }
+
+    /// <summary>Writes entries a throttled <see cref="Put"/> left unsaved (timer and shutdown).</summary>
+    public static void Flush()
+    {
+        lock (FileLock)
+        {
+            if (!_dirty)
+                return;
+        }
+        _lastSave = DateTime.UtcNow;
+        Save();
     }
 
     public static bool SaveDue(DateTime? last, DateTime now) => last is null || now - last.Value >= SaveEvery;
@@ -106,15 +164,52 @@ public static class MediaInfoCache
     /// <summary>For tests.</summary>
     public static void Clear() => Entries.Clear();
 
+    /// <summary>For tests: whether a write is still owed.</summary>
+    public static bool Dirty
+    {
+        get
+        {
+            lock (FileLock)
+                return _dirty;
+        }
+    }
+
+    /// <summary>The file this cache writes (null until <see cref="Init"/>, or when unreadable). For tests.</summary>
+    public static string? File_ => _file;
+
+    /// <summary>For tests: forget the file so <see cref="Init"/> runs again.</summary>
+    public static void Reset()
+    {
+        lock (FileLock)
+        {
+            _file = null;
+            _unreadable = false;
+            _lastSave = null;
+            _dirty = false;
+            _flushTimer?.Dispose();
+            _flushTimer = null;
+        }
+        Entries.Clear();
+    }
+
+    /// <summary>Writes the file. A failed write (disk full, permissions) never fails the probe that called it.</summary>
     private static void Save()
     {
         lock (FileLock)
         {
             if (_file is null)
                 return;
-            var tmp = _file + ".tmp";
-            File.WriteAllText(tmp, JsonSerializer.Serialize(Entries.ToDictionary(p => p.Key, p => p.Value)));
-            File.Move(tmp, _file, true);
+            _dirty = false; // before the snapshot: a Put after it sets it again (it waits for this lock)
+            try
+            {
+                var tmp = _file + ".tmp";
+                File.WriteAllText(tmp, JsonSerializer.Serialize(Entries.ToDictionary(p => p.Key, p => p.Value)));
+                File.Move(tmp, _file, true);
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            {
+                _dirty = true; // tried again on the next write
+            }
         }
     }
 }

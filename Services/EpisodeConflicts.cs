@@ -23,20 +23,21 @@ public static class EpisodeConflicts
     private static readonly ConcurrentDictionary<Guid, Entry> Entries = new();
     private static readonly object FileLock = new();
     private static string? _file;
+    private static bool _unreadable;
 
     public static void Init(string folder)
     {
         lock (FileLock)
         {
-            if (_file is not null)
+            if (_file is not null || _unreadable)
                 return;
-            Directory.CreateDirectory(folder);
-            _file = Path.Combine(folder, "episode-conflicts.json");
+            var file = Path.Combine(folder, "episode-conflicts.json");
             try
             {
-                if (File.Exists(_file))
+                Directory.CreateDirectory(folder);
+                if (File.Exists(file))
                 {
-                    foreach (var e in JsonSerializer.Deserialize<List<Entry>>(File.ReadAllText(_file)) ?? [])
+                    foreach (var e in JsonSerializer.Deserialize<List<Entry>>(File.ReadAllText(file)) ?? [])
                         Entries[e.SeriesId] = e;
                 }
             }
@@ -44,6 +45,14 @@ public static class EpisodeConflicts
             {
                 // A broken file is rebuilt by the next tree sync.
             }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException or NotSupportedException)
+            {
+                // Unreadable: a report side file, so the sync goes on without it and the file is
+                // left as it is. Not retried for every series until a restart.
+                _unreadable = true;
+                return;
+            }
+            _file = file;
         }
     }
 
@@ -73,9 +82,16 @@ public static class EpisodeConflicts
         {
             if (_file is null)
                 return;
-            var tmp = _file + ".tmp";
-            File.WriteAllText(tmp, JsonSerializer.Serialize(Entries.Values.OrderBy(e => e.SeriesName).ToList()));
-            File.Move(tmp, _file, true);
+            try
+            {
+                var tmp = _file + ".tmp";
+                File.WriteAllText(tmp, JsonSerializer.Serialize(Entries.Values.OrderBy(e => e.SeriesName).ToList()));
+                File.Move(tmp, _file, true);
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            {
+                // Only feeds the duplicates report: never fail the tree sync over it.
+            }
         }
     }
 }

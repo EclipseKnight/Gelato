@@ -38,7 +38,7 @@ public sealed class RemuxDbService(
         if (!CacheEnabled)
             return null;
         Gelato.Services.MediaInfoCache.Init(Path.Combine(appPaths.DataPath, "gelato"));
-        return Gelato.Services.MediaInfoCache.Key(identity.InfoHash, identity.FileIdx);
+        return Gelato.Services.MediaInfoCache.Key(identity.InfoHash, identity.FileIdx, identity.Size);
     }
 
     private static bool Enabled => GelatoPlugin.Instance?.Configuration.RemuxDbEnabled ?? false;
@@ -178,6 +178,8 @@ public sealed class RemuxDbService(
     public bool OnProbed(Video row, LibraryOptions libraryOptions)
     {
         var streams = mediaStreams.GetMediaStreams(new MediaStreamQuery { ItemId = row.Id });
+        // External subtitles belong to one row's files, not to the torrent's file.
+        var fileStreams = streams.Where(s => !s.IsExternal).ToList();
         if (row.RunTimeTicks is not > 0 || streams.All(s => s.Type != MediaStreamType.Video))
             return false;
 
@@ -202,8 +204,8 @@ public sealed class RemuxDbService(
                     row.Width,
                     row.Height,
                     row.DefaultVideoStreamIndex,
-                    streams.Any(s => s.Type == MediaStreamType.Subtitle),
-                    streams.ToList()
+                    fileStreams.Any(s => s.Type == MediaStreamType.Subtitle),
+                    fileStreams
                 )
             );
         }

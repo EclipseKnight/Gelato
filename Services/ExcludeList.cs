@@ -24,11 +24,16 @@ public static class ExcludeList
         var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var raw in entries ?? [])
         {
-            foreach (var line in (raw ?? "").Split('\n', ',', ';'))
+            // The note goes first, so ids named inside a note ("# copy of kitsu:12, kitsu:14")
+            // aren't read as entries.
+            foreach (var line in (raw ?? "").Split('\n'))
             {
-                var id = line.Split('#')[0].Trim();
-                if (id.Length > 0)
-                    set.Add(id);
+                foreach (var part in line.Split('#')[0].Split(',', ';'))
+                {
+                    var id = part.Trim();
+                    if (id.Length > 0)
+                        set.Add(id);
+                }
             }
         }
         return set;

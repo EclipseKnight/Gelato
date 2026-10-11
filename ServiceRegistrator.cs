@@ -191,7 +191,10 @@ public class ServiceRegistrator : IPluginServiceRegistrator
         {
             var cfg = GelatoPlugin.Instance?.Configuration;
             if (cfg is null)
+            {
+                FlushMediaInfoCache();
                 return Task.CompletedTask;
+            }
 
             foreach (var folder in cfg.GetLibraryPaths())
             {
@@ -210,7 +213,22 @@ public class ServiceRegistrator : IPluginServiceRegistrator
                 }
             }
 
+            // After the seed files, so nothing here can keep them from going.
+            FlushMediaInfoCache();
             return Task.CompletedTask;
+        }
+
+        /// <summary>Writes probe results a throttled write left in memory; never blocks shutdown.</summary>
+        private void FlushMediaInfoCache()
+        {
+            try
+            {
+                Gelato.Services.MediaInfoCache.Flush();
+            }
+            catch (Exception ex)
+            {
+                log.LogWarning(ex, "Gelato: could not write the media-info cache at shutdown");
+            }
         }
     }
 }

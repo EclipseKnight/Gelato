@@ -2678,7 +2678,13 @@ public sealed class GelatoManager(
         if (fullPass && !cancellationToken.IsCancellationRequested)
         {
             if (SeriesStatusMap.FullPassSucceeded(total, failed, noMeta))
-                FullPassState.Write(stateFolder, now);
+            {
+                if (!FullPassState.Write(stateFolder, now))
+                    _log.LogWarning(
+                        "SyncSeriesTrees: could not save the weekly pass time in {Folder}; every sync will run the weekly pass until it can.",
+                        stateFolder
+                    );
+            }
             else
                 _log.LogWarning(
                     "SyncSeriesTrees: weekly pass not counted as done, {Failed} failed and {NoMeta} had no meta of {Total}; it runs again next time.",
