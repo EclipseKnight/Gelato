@@ -31,6 +31,13 @@ public static class MediaInfoCache
     private static readonly ConcurrentDictionary<string, Entry> Entries = new();
     private static readonly object FileLock = new();
     private static string? _file;
+    private static DateTime? _lastSave;
+
+    /// <summary>
+    /// The file holds every entry (a few KB to 90 KB each), so it is written at most this often
+    /// rather than on every probe. A restart loses at most this much; it is only a cache.
+    /// </summary>
+    public static readonly TimeSpan SaveEvery = TimeSpan.FromMinutes(1);
 
     /// <summary>The cache key, or null when the file can't be told apart from others.</summary>
     public static string? Key(string? infoHash, int? fileIdx) =>
@@ -70,8 +77,15 @@ public static class MediaInfoCache
         entry.LastUsedUtc = DateTime.UtcNow;
         Entries[key] = entry;
         Trim(MaxEntries);
-        Save();
+        var now = DateTime.UtcNow;
+        if (SaveDue(_lastSave, now))
+        {
+            _lastSave = now;
+            Save();
+        }
     }
+
+    public static bool SaveDue(DateTime? last, DateTime now) => last is null || now - last.Value >= SaveEvery;
 
     public static int Count => Entries.Count;
 
