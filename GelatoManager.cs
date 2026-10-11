@@ -779,11 +779,11 @@ public sealed class GelatoManager(
             if (CatalogIdentity.NativeId(incoming.ProviderIds) is not { } native)
                 return true;
 
-            // Found by its IMDb id and carrying no native id yet (added from a catalogue without
-            // one): take the native id, so the next lookup finds it by that. Entries imported in
-            // parallel may have found it at the same time: one at a time, checked against the
-            // saved ids, the first one takes it.
-            if (CatalogIdentity.NativeId(existing.ProviderIds) is null)
+            // Found by its IMDb id (added from a catalogue without a native id): take the native
+            // id, so the next lookup finds it by that. Entries imported in parallel may have found
+            // it at the same time: one at a time, checked against the saved ids only, the first
+            // one takes it.
+            if (CatalogIdentity.FoundByImdb(existing.ProviderIds, native))
             {
                 await ClaimGate.WaitAsync(ct).ConfigureAwait(false);
                 try

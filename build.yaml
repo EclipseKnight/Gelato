@@ -51,7 +51,8 @@ changelog: >
   instead of being added again, and two entries imported at the same time can't both take the
   same show. With FileSplitSeasons on and the mapping list saved, a series is not taken by an
   entry the list names as a later season, specials or a second season 1 entry (of several
-  season 1 entries, the one with the lowest id is the show), since those share the show's IMDb
+  season 1 TV entries, the one with the lowest id is the show; a film, ONA or special placed in
+  season 1 is never the show while there is a TV entry), since those share the show's IMDb
   id; they stay shows of their own. With FileSplitSeasons off, before the list is first saved,
   or for an entry the list doesn't have, the match is made as before. An IMDb id change is not
   applied when another item already has that id. Episodes due within the next day get a stream lookup, and skipping an unaired one is

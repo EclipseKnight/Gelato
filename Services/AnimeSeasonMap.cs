@@ -31,6 +31,8 @@ public sealed class AnimeSeasonMap
     private readonly Dictionary<string, Link> _links;
 
     // Per TVDB show and id kind, the lowest id the list names as season 1 ("500:kitsu" -> 12).
+    // Only TV rows count: a film, ONA or special the list places in season 1 is not the show. A
+    // show with no TV row there falls back to its rows of any type.
     private readonly Dictionary<string, int> _firstSeason;
 
     private AnimeSeasonMap(Dictionary<string, Link> links, Dictionary<string, int> firstSeason)
@@ -46,6 +48,7 @@ public sealed class AnimeSeasonMap
     {
         var links = new Dictionary<string, Link>(StringComparer.OrdinalIgnoreCase);
         var firstSeason = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        var firstSeasonAnyType = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         using var doc = JsonDocument.Parse(json);
         if (doc.RootElement.ValueKind != JsonValueKind.Array)
             return new AnimeSeasonMap(links, firstSeason);
@@ -62,24 +65,27 @@ public sealed class AnimeSeasonMap
             )
                 continue;
             var link = new Link(tvdb, number) { Imdb = Imdbs(e) };
+            var first = IsTv(e) ? firstSeason : firstSeasonAnyType;
             foreach (var (field, prefix) in Ids)
             {
                 if (Int(e, field) is not { } id || id <= 0)
                     continue;
                 links.TryAdd($"{prefix}:{id}", link);
                 var show = $"{tvdb}:{prefix}";
-                if (number == 1 && (!firstSeason.TryGetValue(show, out var first) || id < first))
-                    firstSeason[show] = id;
+                if (number == 1 && (!first.TryGetValue(show, out var lowest) || id < lowest))
+                    first[show] = id;
             }
         }
+        foreach (var (show, id) in firstSeasonAnyType)
+            firstSeason.TryAdd(show, id);
         return new AnimeSeasonMap(links, firstSeason);
     }
 
     /// <summary>
     /// Whether the list names a catalogue id as a part of a show other than the show itself: a
     /// later season, specials, or a second season 1 entry (a split first season, "Part 2"). Of
-    /// several season 1 entries, the lowest id of that kind is the show. False for ids the list
-    /// doesn't have.
+    /// several season 1 entries, the lowest id of that kind among the TV ones is the show. False
+    /// for ids the list doesn't have.
     /// </summary>
     public bool IsSplitEntry(string? stremioId)
     {
@@ -103,6 +109,12 @@ public sealed class AnimeSeasonMap
             return null;
         return _links.TryGetValue($"{parts[0]}:{parts[1]}", out var link) ? link : null;
     }
+
+    // Rows without a type are taken as TV rows.
+    private static bool IsTv(JsonElement e) =>
+        !e.TryGetProperty("type", out var v)
+        || v.ValueKind != JsonValueKind.String
+        || string.Equals(v.GetString(), "TV", StringComparison.OrdinalIgnoreCase);
 
     private static List<string> Imdbs(JsonElement e)
     {

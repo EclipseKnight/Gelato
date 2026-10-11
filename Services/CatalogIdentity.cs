@@ -104,6 +104,13 @@ public static class CatalogIdentity
             && string.Equals(other.Value, native.Value, StringComparison.OrdinalIgnoreCase) ? ClaimResult.Ours
         : ClaimResult.Taken;
 
+    /// <summary>
+    /// Whether a found item was reached through its IMDb id rather than by this native id, so its
+    /// claim has to be checked against its saved ids under the claim gate.
+    /// </summary>
+    public static bool FoundByImdb(IReadOnlyDictionary<string, string> found, KeyValuePair<string, string> native) =>
+        Claim(found, native) != ClaimResult.Ours;
+
     public static bool IsAliasKey(string key) =>
         key.StartsWith(AliasKey, StringComparison.OrdinalIgnoreCase);
 

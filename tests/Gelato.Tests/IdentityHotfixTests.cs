@@ -70,6 +70,49 @@ public class IdentityHotfixTests
     }
 
     [Fact]
+    public void An_item_taken_by_another_entry_is_checked_under_the_gate_and_not_found()
+    {
+        var ova = new KeyValuePair<string, string>("Kitsu", "14");
+        // The found copy already carries the season 1 entry's id: reached through the IMDb id,
+        // so it goes through the gate, where the saved ids say another entry took it.
+        var taken = new Dictionary<string, string> { ["Imdb"] = "tt1", ["Kitsu"] = "12" };
+        Assert.True(CatalogIdentity.FoundByImdb(taken, ova));
+        Assert.Equal(CatalogIdentity.ClaimResult.Taken, CatalogIdentity.Claim(taken, ova));
+        Assert.True(CatalogIdentity.FoundByImdb(new Dictionary<string, string> { ["Imdb"] = "tt1" }, ova));
+        // Found by its own native id: no claim to check.
+        Assert.False(CatalogIdentity.FoundByImdb(new Dictionary<string, string> { ["Imdb"] = "tt1", ["kitsu"] = "14" }, ova));
+    }
+
+    [Fact]
+    public void Only_tv_rows_count_toward_the_show()
+    {
+        var map = AnimeSeasonMap.Parse(
+            new MemoryStream(
+                System.Text.Encoding.UTF8.GetBytes(
+                    """
+                    [
+                      { "type": "MOVIE", "kitsu_id": 3, "tvdb_id": 500, "season": { "tvdb": 1 } },
+                      { "type": "ONA", "kitsu_id": 4, "tvdb_id": 500, "season": { "tvdb": 1 } },
+                      { "type": "TV", "kitsu_id": 12, "tvdb_id": 500, "season": { "tvdb": 1 } },
+                      { "type": "TV", "kitsu_id": 15, "tvdb_id": 500, "season": { "tvdb": 1 } },
+                      { "type": "ONA", "kitsu_id": 21, "tvdb_id": 700, "season": { "tvdb": 1 } },
+                      { "type": "ONA", "kitsu_id": 22, "tvdb_id": 700, "season": { "tvdb": 1 } }
+                    ]
+                    """
+                )
+            )
+        );
+        Assert.False(map.IsSplitEntry("kitsu:12"));
+        Assert.True(map.IsSplitEntry("kitsu:3"));
+        Assert.True(map.IsSplitEntry("kitsu:4"));
+        Assert.True(map.IsSplitEntry("kitsu:15"));
+        Assert.True(CatalogIdentity.ImdbMatchIsSame(new Dictionary<string, string> { ["Imdb"] = "tt1" }, new("Kitsu", "12"), true, map));
+        // No TV row: the lowest id of any type is the show.
+        Assert.False(map.IsSplitEntry("kitsu:21"));
+        Assert.True(map.IsSplitEntry("kitsu:22"));
+    }
+
+    [Fact]
     public void The_saved_mapping_list_is_read_without_a_download()
     {
         var folder = Path.Combine(Path.GetTempPath(), "gelato-peek-" + Guid.NewGuid().ToString("N"));
