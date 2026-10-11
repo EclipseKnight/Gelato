@@ -8,13 +8,16 @@ namespace Gelato.Services;
 /// </summary>
 public static class AnimeSeasonMapStore
 {
-    private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(60) };
+    private static readonly HttpClient Http = new() { Timeout = Timeout.InfiniteTimeSpan };
     private static readonly SemaphoreSlim Gate = new(1, 1);
     private static readonly TimeSpan MaxAge = TimeSpan.FromHours(24);
     private static readonly TimeSpan RetryAfter = TimeSpan.FromHours(1);
 
     /// <summary>The full Fribb list is a few MB; anything far larger is not it.</summary>
     public const long MaxBytes = 64L * 1024 * 1024;
+
+    /// <summary>Limit for the whole download, body included, so a stalled server can't hold the lock.</summary>
+    public static TimeSpan DownloadTimeout { get; set; } = TimeSpan.FromSeconds(60);
     private static AnimeSeasonMap? _map;
     private static string? _url;
     private static DateTime _loaded;
@@ -46,13 +49,15 @@ public static class AnimeSeasonMapStore
                 {
                     if (!IsAllowedUrl(url))
                         throw new InvalidOperationException("the mapping list URL must be https (http only on a local address)");
+                    using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                    timeout.CancelAfter(DownloadTimeout);
                     using var response = await Http
-                        .GetAsync(url, HttpCompletionOption.ResponseHeadersRead, ct)
+                        .GetAsync(url, HttpCompletionOption.ResponseHeadersRead, timeout.Token)
                         .ConfigureAwait(false);
                     response.EnsureSuccessStatusCode();
                     if (response.Content.Headers.ContentLength > MaxBytes)
                         throw new InvalidOperationException("the mapping list is too large");
-                    var bytes = await ReadCappedAsync(response.Content, ct).ConfigureAwait(false);
+                    var bytes = await ReadCappedAsync(response.Content, timeout.Token).ConfigureAwait(false);
                     using (var check = new MemoryStream(bytes))
                         _ = AnimeSeasonMap.Parse(check);
                     var tmp = file + ".tmp";
@@ -83,7 +88,10 @@ public static class AnimeSeasonMapStore
         }
     }
 
-    /// <summary>https, or plain http to a loopback or private address (a list served on the LAN).</summary>
+    /// <summary>
+    /// https, or plain http to loopback or a literal private IPv4 address (10/8, 172.16/12, 192.168/16).
+    /// Other host names need https: over http the address they resolve to is not checked.
+    /// </summary>
     public static bool IsAllowedUrl(string url)
     {
         if (!Uri.TryCreate(url, UriKind.Absolute, out var u))
