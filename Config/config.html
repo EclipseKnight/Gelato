@@ -386,13 +386,15 @@
                   $('#dupSummary').textContent = 'The report is already running. Use "Reload" when it has finished.';
                   return;
                 }
+                // Only a result that ends after this POST belongs to this run.
+                const lastEnd = task.LastExecutionResult?.EndTimeUtc ?? null;
                 await window.ApiClient.ajax({ type: 'POST', url: window.ApiClient.getUrl('ScheduledTasks/Running/' + task.Id) });
                 $('#dupSummary').textContent = 'Report running…';
                 let status = null;
                 for (let n = 0; n < 120; n++) {
                   await new Promise((r) => setTimeout(r, 3000));
                   const t = await window.ApiClient.getJSON(window.ApiClient.getUrl('ScheduledTasks/' + task.Id));
-                  if (t.State === 'Idle') {
+                  if (t.State === 'Idle' && (t.LastExecutionResult?.EndTimeUtc ?? null) !== lastEnd) {
                     status = t.LastExecutionResult?.Status ?? '';
                     break;
                   }

@@ -51,4 +51,15 @@ public class ConfigPageTests
         Assert.Contains("const loaded = await loadReport();", page);
         Assert.Contains("there is no earlier report.", page);
     }
+
+    [Fact]
+    public void Report_run_ignores_the_previous_result()
+    {
+        var page = Page();
+        // Only a result that ended after the run was started counts, not the one from before.
+        Assert.Contains("const lastEnd = task.LastExecutionResult?.EndTimeUtc ?? null;", page);
+        Assert.Contains("(t.LastExecutionResult?.EndTimeUtc ?? null) !== lastEnd", page);
+        Assert.True(page.IndexOf("const lastEnd", StringComparison.Ordinal)
+            < page.IndexOf("ScheduledTasks/Running/", StringComparison.Ordinal));
+    }
 }
