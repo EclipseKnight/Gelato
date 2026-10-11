@@ -83,6 +83,34 @@ public class SplitSeasonTests
     }
 
     [Theory]
+    [InlineData("mal:61967", false)] // a later season kept as its own show
+    [InlineData("mal:33950", false)] // an OVA kept as its own show
+    [InlineData("mal:3", true)] // season 1: the show itself
+    [InlineData("tt7441658", true)] // a show known by its IMDb id only
+    [InlineData(null, true)]
+    public void A_part_kept_as_its_own_show_is_never_the_parent(string? id, bool parent) =>
+        Assert.Equal(parent, SplitSeason.CanBeParent(Map(), id));
+
+    [Fact]
+    public void A_second_season_one_entry_is_never_the_parent()
+    {
+        var map = AnimeSeasonMap.Parse(
+            new MemoryStream(
+                Encoding.UTF8.GetBytes(
+                    """
+                    [
+                      { "mal_id": 10, "tvdb_id": 7, "season": { "tvdb": 1 } },
+                      { "mal_id": 11, "tvdb_id": 7, "season": { "tvdb": 1 } }
+                    ]
+                    """
+                )
+            )
+        );
+        Assert.True(SplitSeason.CanBeParent(map, "mal:10"));
+        Assert.False(SplitSeason.CanBeParent(map, "mal:11"));
+    }
+
+    [Theory]
     [InlineData(0)]
     [InlineData(2)]
     public void Needs_exactly_one_parent(int parents) =>

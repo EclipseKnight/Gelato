@@ -44,6 +44,8 @@ changelog: >
   over by its later season and, within one import run, the result doesn't depend on the order
   entries are found in (across runs, the entry filed first keeps the season); an entry whose
   season the show already has (a second cour) stays a show of its own instead of being left out.
+  A later season, OVA or second season 1 entry kept as a show of its own is not taken for the
+  show when a later season is filed, so it no longer stops that season from being filed.
   A catalogue item with a native id that is already in the library by its IMDb id only (added
   from a catalogue without native ids, like Cinemeta) is matched and takes the native id
   instead of being added again, and two entries imported at the same time can't both take the

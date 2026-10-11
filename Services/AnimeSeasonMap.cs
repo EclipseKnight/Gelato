@@ -159,6 +159,14 @@ public static class SplitSeason
     public static IEnumerable<StremioMeta> FilingOrder(IEnumerable<StremioMeta> entries) =>
         entries.OrderBy(m => m.Id.Length).ThenBy(m => m.Id, StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>
+    /// Whether a library series can be the show a later season is filed under: not one the list
+    /// names as a part kept as its own show (a later season, an OVA, a second season 1 entry),
+    /// which carries the show's TVDB and IMDb ids too.
+    /// </summary>
+    public static bool CanBeParent(AnimeSeasonMap map, string? seriesStremioId) =>
+        !map.IsSplitEntry(seriesStremioId);
+
     public enum Decision
     {
         /// <summary>Import as its own show, as before.</summary>
