@@ -41,4 +41,13 @@ public class MediaInfoCacheTests
         var a = Assert.Single(back.Streams);
         Assert.Equal((MediaStreamType.Audio, 1, "eac3", "jpn", (int?)6), (a.Type, a.Index, a.Codec, a.Language, a.Channels));
     }
+
+    [Fact]
+    public void FileIsWrittenAtMostOnceAMinute()
+    {
+        var t = new DateTime(2026, 10, 11, 7, 0, 0, DateTimeKind.Utc);
+        Assert.True(MediaInfoCache.SaveDue(null, t));
+        Assert.False(MediaInfoCache.SaveDue(t, t.AddSeconds(59)));
+        Assert.True(MediaInfoCache.SaveDue(t, t.AddMinutes(1)));
+    }
 }
