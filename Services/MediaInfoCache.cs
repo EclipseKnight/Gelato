@@ -11,7 +11,11 @@ namespace Gelato.Services;
 /// </summary>
 public static class MediaInfoCache
 {
-    public const int MaxEntries = 5000;
+    /// <summary>
+    /// Entries average about 22 KB on the server (a stream serializes to about 1.5 KB, 14 streams
+    /// per file on average, up to 56), so 2000 keeps the file around 45 MB.
+    /// </summary>
+    public const int MaxEntries = 2000;
 
     public sealed record Entry(
         long RunTimeTicks,

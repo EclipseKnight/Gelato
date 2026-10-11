@@ -50,4 +50,18 @@ public class MediaInfoCacheTests
         Assert.False(MediaInfoCache.SaveDue(t, t.AddSeconds(59)));
         Assert.True(MediaInfoCache.SaveDue(t, t.AddMinutes(1)));
     }
+
+    [Fact]
+    public void FullCacheStaysUnderFiftyMegabytes()
+    {
+        // A typical file: 1 video, 3 audio and 10 subtitle tracks, filled in like a real probe.
+        var streams = new List<MediaStream> { new() { Type = MediaStreamType.Video, Index = 0, Codec = "hevc", Width = 1920, Height = 1080, BitRate = 8_000_000, Profile = "Main 10", PixelFormat = "yuv420p10le", Title = "1080p HEVC" } };
+        for (var i = 1; i <= 3; i++)
+            streams.Add(new() { Type = MediaStreamType.Audio, Index = i, Codec = "eac3", Language = "jpn", Channels = 6, ChannelLayout = "5.1", SampleRate = 48000, Title = "Japanese 5.1" });
+        for (var i = 4; i <= 13; i++)
+            streams.Add(new() { Type = MediaStreamType.Subtitle, Index = i, Codec = "ass", Language = "eng", Title = "English (Full)" });
+        var entry = E(1) with { Streams = streams };
+        var bytes = System.Text.Encoding.UTF8.GetByteCount(System.Text.Json.JsonSerializer.Serialize(entry));
+        Assert.True((long)bytes * MediaInfoCache.MaxEntries <= 50L * 1024 * 1024, $"{bytes} bytes per entry");
+    }
 }
