@@ -59,19 +59,33 @@ public class SplitSeasonTests
 
     [Fact]
     public void Files_a_new_season_into_the_one_parent() =>
-        Assert.Equal(SplitSeason.Decision.File, SplitSeason.Decide(S2, 1, [1], 0, 0));
+        Assert.Equal(SplitSeason.Decision.File, SplitSeason.Decide(S2, 1, [1], 0, 0, 12));
 
     [Fact]
     public void Files_again_when_the_season_only_holds_what_the_entry_filed() =>
-        Assert.Equal(SplitSeason.Decision.File, SplitSeason.Decide(S2, 1, [1], 12, 12));
+        Assert.Equal(SplitSeason.Decision.File, SplitSeason.Decide(S2, 1, [1], 12, 12, 12));
 
     [Fact]
-    public void Parent_with_its_own_episodes_in_that_season_keeps_them_and_the_entry_is_its_own_show() =>
-        Assert.Equal(SplitSeason.Decision.OwnShow, SplitSeason.Decide(S2, 1, [1], 13, 0));
+    public void Parent_with_fewer_own_episodes_in_that_season_keeps_them_and_the_entry_is_its_own_show() =>
+        Assert.Equal(SplitSeason.Decision.OwnShow, SplitSeason.Decide(S2, 1, [1], 13, 0, 24));
+
+    [Theory]
+    [InlineData(13, 0, 13)]
+    [InlineData(24, 0, 12)]
+    [InlineData(25, 12, 12)]
+    public void Parent_with_at_least_the_entrys_episodes_in_that_season_has_it_and_the_entry_is_left_out(
+        int parentSeason,
+        int filedFromEntry,
+        int entryEpisodes
+    ) =>
+        Assert.Equal(
+            SplitSeason.Decision.ParentHasSeason,
+            SplitSeason.Decide(S2, 1, [1], parentSeason, filedFromEntry, entryEpisodes)
+        );
 
     [Fact]
     public void Season_one_is_the_show_itself_and_never_filed() =>
-        Assert.Equal(SplitSeason.Decision.OwnShow, SplitSeason.Decide(new(331753, 1), 1, [1], 0, 0));
+        Assert.Equal(SplitSeason.Decision.OwnShow, SplitSeason.Decide(new(331753, 1), 1, [1], 0, 0, 12));
 
     [Fact]
     public void Deferred_entries_are_placed_in_id_order_whatever_order_they_came_in()
@@ -104,7 +118,7 @@ public class SplitSeasonTests
         Assert.True(SplitSeason.CanBeParent(Map(), show));
         // With the OVA no longer a candidate, the later season has one parent and is filed.
         var parents = new[] { show, ova }.Count(s => SplitSeason.CanBeParent(Map(), s));
-        Assert.Equal(SplitSeason.Decision.File, SplitSeason.Decide(Map().Find("mal:61967"), parents, [1], 0, 0));
+        Assert.Equal(SplitSeason.Decision.File, SplitSeason.Decide(Map().Find("mal:61967"), parents, [1], 0, 0, 12));
     }
 
     [Fact]
@@ -131,19 +145,19 @@ public class SplitSeasonTests
     [InlineData(0)]
     [InlineData(2)]
     public void Needs_exactly_one_parent(int parents) =>
-        Assert.Equal(SplitSeason.Decision.OwnShow, SplitSeason.Decide(S2, parents, [1], 0, 0));
+        Assert.Equal(SplitSeason.Decision.OwnShow, SplitSeason.Decide(S2, parents, [1], 0, 0, 12));
 
     [Fact]
     public void No_mapping_or_specials_link_is_its_own_show()
     {
-        Assert.Equal(SplitSeason.Decision.OwnShow, SplitSeason.Decide(null, 1, [1], 0, 0));
-        Assert.Equal(SplitSeason.Decision.OwnShow, SplitSeason.Decide(new(331753, 0), 1, [1], 0, 0));
+        Assert.Equal(SplitSeason.Decision.OwnShow, SplitSeason.Decide(null, 1, [1], 0, 0, 12));
+        Assert.Equal(SplitSeason.Decision.OwnShow, SplitSeason.Decide(new(331753, 0), 1, [1], 0, 0, 12));
     }
 
     [Fact]
     public void Entry_with_several_seasons_or_none_is_its_own_show()
     {
-        Assert.Equal(SplitSeason.Decision.OwnShow, SplitSeason.Decide(S2, 1, [1, 2], 0, 0));
-        Assert.Equal(SplitSeason.Decision.OwnShow, SplitSeason.Decide(S2, 1, [], 0, 0));
+        Assert.Equal(SplitSeason.Decision.OwnShow, SplitSeason.Decide(S2, 1, [1, 2], 0, 0, 12));
+        Assert.Equal(SplitSeason.Decision.OwnShow, SplitSeason.Decide(S2, 1, [], 0, 0, 12));
     }
 }

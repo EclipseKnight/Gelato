@@ -48,6 +48,17 @@ public static class AnimeSeasonMapStore
         }
     }
 
+    /// <summary>Forgets the loaded list (tests).</summary>
+    public static void Reset()
+    {
+        lock (PeekLock)
+        {
+            _map = null;
+            _url = null;
+            _loaded = default;
+        }
+    }
+
     public static async Task<AnimeSeasonMap?> GetAsync(string? url, string folder, ILogger log, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(url))

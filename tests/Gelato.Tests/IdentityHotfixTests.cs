@@ -70,7 +70,7 @@ public class IdentityHotfixTests
     }
 
     [Fact]
-    public void An_item_taken_by_another_entry_is_checked_under_the_gate_and_not_found()
+    public void An_item_found_by_imdb_that_carries_another_entrys_native_id_is_taken()
     {
         var ova = new KeyValuePair<string, string>("Kitsu", "14");
         // The found copy already carries the season 1 entry's id: reached through the IMDb id,
@@ -138,6 +138,7 @@ public class IdentityHotfixTests
         }
         finally
         {
+            AnimeSeasonMapStore.Reset();
             Directory.Delete(folder, true);
         }
     }

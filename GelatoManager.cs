@@ -700,9 +700,28 @@ public sealed class GelatoManager(
                 .ToList();
             var fromEntry = inSeason.Count(e => e.Path is { } p && entryPaths.Contains(p));
 
-            var decision = SplitSeason.Decide(link, parents.Count, entrySeasons, inSeason.Count, fromEntry);
+            var decision = SplitSeason.Decide(
+                link,
+                parents.Count,
+                entrySeasons,
+                inSeason.Count,
+                fromEntry,
+                videos.Count
+            );
             if (decision == SplitSeason.Decision.OwnShow)
                 return null;
+            if (decision == SplitSeason.Decision.ParentHasSeason)
+            {
+                _log.LogInformation(
+                    "{Entry} ({Id}) left out: {Parent} ({ParentId}) has season {Season} already",
+                    meta.Name,
+                    meta.Id,
+                    parent.Name,
+                    parent.Id,
+                    link.Season
+                );
+                return parent;
+            }
 
             var copy = full!.ShallowCopy();
             copy.Videos = videos

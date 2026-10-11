@@ -188,6 +188,9 @@ public static class SplitSeason
         /// <summary>Import as its own show, as before.</summary>
         OwnShow,
 
+        /// <summary>The parent has the whole season already: nothing filed, the entry left out.</summary>
+        ParentHasSeason,
+
         /// <summary>File the entry's episodes as the season of the parent.</summary>
         File,
     }
@@ -197,12 +200,14 @@ public static class SplitSeason
     /// <param name="entrySeasons">Season numbers in the entry's own episode list (0 left out).</param>
     /// <param name="parentSeasonEpisodes">Episodes the parent has in that season.</param>
     /// <param name="parentSeasonFiledFromEntry">How many of those were filed from this entry.</param>
+    /// <param name="entryEpisodes">Episodes in the entry's own episode list.</param>
     public static Decision Decide(
         AnimeSeasonMap.Link? link,
         int parents,
         IReadOnlyCollection<int> entrySeasons,
         int parentSeasonEpisodes,
-        int parentSeasonFiledFromEntry
+        int parentSeasonFiledFromEntry,
+        int entryEpisodes
     )
     {
         // Only with a confident mapping: one show with that TVDB id, a later season (season 1
@@ -211,10 +216,12 @@ public static class SplitSeason
             return Decision.OwnShow;
         if (entrySeasons.Count != 1)
             return Decision.OwnShow;
-        // Episodes the parent got from elsewhere are never moved or renumbered, and the entry is
-        // not dropped either (a second cour of the same season): it stays a show of its own.
-        if (parentSeasonEpisodes > parentSeasonFiledFromEntry)
-            return Decision.OwnShow;
+        // Episodes the parent got from elsewhere are never moved or renumbered. When there are at
+        // least as many as the entry has, the season is there already and the entry is left out;
+        // otherwise (a second cour of the same season) it stays a show of its own.
+        var fromElsewhere = parentSeasonEpisodes - parentSeasonFiledFromEntry;
+        if (fromElsewhere > 0)
+            return fromElsewhere >= entryEpisodes ? Decision.ParentHasSeason : Decision.OwnShow;
         return Decision.File;
     }
 }
