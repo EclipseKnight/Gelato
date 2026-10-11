@@ -343,8 +343,8 @@ public sealed class GelatoManager(
             return found;
 
         // Nothing under the native id: the title may be in the library from a catalogue without
-        // native ids (Cinemeta), by its IMDb id only. A series only for an entry the anime
-        // mapping list names as season 1: later seasons and OVAs share the show's IMDb id.
+        // native ids (Cinemeta), by its IMDb id only. Not a series for an entry the anime
+        // mapping list names as a later season, OVA or second cour: they share the show's IMDb id.
         if (
             CatalogIdentity.NativeId(item.ProviderIds) is not { } native
             || item.GetProviderId(MetadataProvider.Imdb) is not { Length: > 0 } imdb
@@ -359,12 +359,17 @@ public sealed class GelatoManager(
             );
     }
 
-    /// <summary>The anime mapping list if it is loaded or saved; never downloads.</summary>
+    /// <summary>
+    /// The anime mapping list when FileSplitSeasons is on and the list is loaded or saved; never
+    /// downloads. Null otherwise, and the IMDb id match is made as before.
+    /// </summary>
     private AnimeSeasonMap? AnimeMap(User? user = null)
     {
         try
         {
             var cfg = GelatoPlugin.Instance!.GetConfig(user?.Id ?? Guid.Empty);
+            if (!cfg.FileSplitSeasons)
+                return null;
             return AnimeSeasonMapStore.Peek(cfg.AnimeMappingUrl, Path.Combine(appPaths.DataPath, "gelato"));
         }
         catch (Exception ex)

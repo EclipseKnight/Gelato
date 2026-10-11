@@ -41,5 +41,16 @@
   "imdb_id": [
    "tt0000601"
   ]
+ },
+ {
+  "type": "OVA",
+  "kitsu_id": 603,
+  "tvdb_id": 900601,
+  "season": {
+   "tvdb": 0
+  },
+  "imdb_id": [
+   "tt0000601"
+  ]
  }
 ]

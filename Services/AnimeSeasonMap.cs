@@ -30,7 +30,14 @@ public sealed class AnimeSeasonMap
 
     private readonly Dictionary<string, Link> _links;
 
-    private AnimeSeasonMap(Dictionary<string, Link> links) => _links = links;
+    // Per TVDB show and id kind, the lowest id the list names as season 1 ("500:kitsu" -> 12).
+    private readonly Dictionary<string, int> _firstSeason;
+
+    private AnimeSeasonMap(Dictionary<string, Link> links, Dictionary<string, int> firstSeason)
+    {
+        _links = links;
+        _firstSeason = firstSeason;
+    }
 
     public int Count => _links.Count;
 
@@ -38,9 +45,10 @@ public sealed class AnimeSeasonMap
     public static AnimeSeasonMap Parse(Stream json)
     {
         var links = new Dictionary<string, Link>(StringComparer.OrdinalIgnoreCase);
+        var firstSeason = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         using var doc = JsonDocument.Parse(json);
         if (doc.RootElement.ValueKind != JsonValueKind.Array)
-            return new AnimeSeasonMap(links);
+            return new AnimeSeasonMap(links, firstSeason);
         foreach (var e in doc.RootElement.EnumerateArray())
         {
             if (e.ValueKind != JsonValueKind.Object)
@@ -56,11 +64,33 @@ public sealed class AnimeSeasonMap
             var link = new Link(tvdb, number) { Imdb = Imdbs(e) };
             foreach (var (field, prefix) in Ids)
             {
-                if (Int(e, field) is { } id && id > 0)
-                    links.TryAdd($"{prefix}:{id}", link);
+                if (Int(e, field) is not { } id || id <= 0)
+                    continue;
+                links.TryAdd($"{prefix}:{id}", link);
+                var show = $"{tvdb}:{prefix}";
+                if (number == 1 && (!firstSeason.TryGetValue(show, out var first) || id < first))
+                    firstSeason[show] = id;
             }
         }
-        return new AnimeSeasonMap(links);
+        return new AnimeSeasonMap(links, firstSeason);
+    }
+
+    /// <summary>
+    /// Whether the list names a catalogue id as a part of a show other than the show itself: a
+    /// later season, specials, or a second season 1 entry (a split first season, "Part 2"). Of
+    /// several season 1 entries, the lowest id of that kind is the show. False for ids the list
+    /// doesn't have.
+    /// </summary>
+    public bool IsSplitEntry(string? stremioId)
+    {
+        if (Find(stremioId) is not { } link)
+            return false;
+        if (link.Season != 1)
+            return true;
+        var parts = stremioId!.Split(':');
+        return int.TryParse(parts[1], out var id)
+            && _firstSeason.TryGetValue($"{link.TvdbId}:{parts[0]}", out var first)
+            && id != first;
     }
 
     /// <summary>The link for a catalogue id such as <c>mal:61967</c> or <c>kitsu:50024</c>.</summary>
@@ -122,8 +152,9 @@ public static class SplitSeason
     }
 
     /// <summary>
-    /// The order deferred entries are placed in: by catalogue id, numbers in numeric order (the
-    /// earlier part usually has the lower id), so the result doesn't depend on import order.
+    /// The order deferred entries are placed in: by catalogue id length, then text (numeric order
+    /// for ids of one kind; the earlier part usually has the lower id), so within one import run
+    /// the result doesn't depend on the order the entries were found in.
     /// </summary>
     public static IEnumerable<StremioMeta> FilingOrder(IEnumerable<StremioMeta> entries) =>
         entries.OrderBy(m => m.Id.Length).ThenBy(m => m.Id, StringComparer.OrdinalIgnoreCase);

@@ -14,7 +14,9 @@ public class IdentityHotfixTests
                     [
                       { "kitsu_id": 12, "tvdb_id": 500, "imdb_id": ["tt1"], "season": { "tvdb": 1 } },
                       { "kitsu_id": 13, "tvdb_id": 500, "imdb_id": ["tt1"], "season": { "tvdb": 2 } },
-                      { "kitsu_id": 14, "tvdb_id": 500, "imdb_id": ["tt1"], "season": { "tvdb": 0 } }
+                      { "kitsu_id": 14, "tvdb_id": 500, "imdb_id": ["tt1"], "season": { "tvdb": 0 } },
+                      { "kitsu_id": 15, "tvdb_id": 500, "imdb_id": ["tt1"], "season": { "tvdb": 1 } },
+                      { "kitsu_id": 9, "tvdb_id": 600, "imdb_id": ["tt2"], "season": { "tvdb": 1 } }
                     ]
                     """
                 )
@@ -35,13 +37,25 @@ public class IdentityHotfixTests
     [InlineData("12", true)] // season 1: the show itself
     [InlineData("13", false)] // a later season
     [InlineData("14", false)] // specials / OVA
-    [InlineData("99", false)] // not in the list
-    public void Only_the_first_season_entry_takes_a_series_known_by_its_imdb_id(string kitsu, bool same)
+    [InlineData("15", false)] // a second season 1 entry (Part 2): the lower id is the show
+    [InlineData("99", true)] // not in the list: as before
+    public void A_split_entry_does_not_take_a_series_known_by_its_imdb_id(string kitsu, bool same)
     {
         var imdbOnly = new Dictionary<string, string> { ["Imdb"] = "tt1" };
         var native = new KeyValuePair<string, string>("Kitsu", kitsu);
         Assert.Equal(same, CatalogIdentity.ImdbMatchIsSame(imdbOnly, native, true, Map()));
-        Assert.False(CatalogIdentity.ImdbMatchIsSame(imdbOnly, native, true, null));
+        // No list (FileSplitSeasons off, or not saved yet): matched as before.
+        Assert.True(CatalogIdentity.ImdbMatchIsSame(imdbOnly, native, true, null));
+    }
+
+    [Fact]
+    public void Of_several_season_one_entries_only_the_lowest_id_of_a_kind_is_the_show()
+    {
+        var map = Map();
+        Assert.False(map.IsSplitEntry("kitsu:12"));
+        Assert.True(map.IsSplitEntry("kitsu:15"));
+        Assert.False(map.IsSplitEntry("kitsu:9")); // another show
+        Assert.False(map.IsSplitEntry("kitsu:99"));
     }
 
     [Fact]

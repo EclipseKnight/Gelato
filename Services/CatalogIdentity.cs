@@ -66,9 +66,11 @@ public static class CatalogIdentity
     /// Cinemeta). An item with another native id is another title that shares the IMDb id.
     /// </summary>
     /// <remarks>
-    /// Anime catalogues give later seasons and OVAs the IMDb id of the whole show, so for a
-    /// series with no native id yet the entry must be the show itself: the anime mapping list
-    /// names it season 1. Otherwise the first season or OVA seen would take the show over.
+    /// Anime catalogues give later seasons, OVAs and second cours the IMDb id of the whole show,
+    /// so a series with no native id yet is not taken by an entry the anime mapping list names
+    /// as one of those (see <see cref="AnimeSeasonMap.IsSplitEntry"/>); otherwise the first one
+    /// seen would take the show over. Without the list (<paramref name="map"/> null) and for ids
+    /// it doesn't have, the match is made as before.
     /// </remarks>
     public static bool ImdbMatchIsSame(
         IReadOnlyDictionary<string, string> candidate,
@@ -79,13 +81,9 @@ public static class CatalogIdentity
         Claim(candidate, native) switch
         {
             ClaimResult.Ours => true,
-            ClaimResult.Take => !series || IsFirstSeason(native, map),
+            ClaimResult.Take => !series || map?.IsSplitEntry($"{native.Key.ToLowerInvariant()}:{native.Value}") != true,
             _ => false,
         };
-
-    /// <summary>Whether the anime mapping list names this native id as season 1 of a show.</summary>
-    public static bool IsFirstSeason(KeyValuePair<string, string> native, AnimeSeasonMap? map) =>
-        map?.Find($"{native.Key.ToLowerInvariant()}:{native.Value}") is { Season: 1 };
 
     public enum ClaimResult
     {
