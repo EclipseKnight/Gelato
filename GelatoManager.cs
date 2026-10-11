@@ -667,7 +667,7 @@ public sealed class GelatoManager(
                     .OfType<Series>()
                     .Where(s => string.Equals(s.GetProviderId(provider), value, StringComparison.OrdinalIgnoreCase))
                     .Where(s => !string.Equals(s.GetProviderId("Stremio"), meta.Id, StringComparison.OrdinalIgnoreCase))
-                    .Where(s => SplitSeason.CanBeParent(map, s.GetProviderId("Stremio")))
+                    .Where(s => SplitSeason.CanBeParent(map, s.ProviderIds))
                     .ToList();
 
             // The show by its TVDB id; a show that has none stored yet by the IMDb id the list

@@ -89,7 +89,23 @@ public class SplitSeasonTests
     [InlineData("tt7441658", true)] // a show known by its IMDb id only
     [InlineData(null, true)]
     public void A_part_kept_as_its_own_show_is_never_the_parent(string? id, bool parent) =>
-        Assert.Equal(parent, SplitSeason.CanBeParent(Map(), id));
+        Assert.Equal(parent, SplitSeason.CanBeParent(Map(), Ids(id)));
+
+    private static Dictionary<string, string> Ids(string? stremio) =>
+        stremio is null ? [] : new() { ["Stremio"] = stremio };
+
+    [Fact]
+    public void A_part_kept_as_its_own_show_with_the_shows_imdb_id_is_never_the_parent()
+    {
+        // The OVA's Stremio id is the show's IMDb id; its native id says what it is.
+        var ova = new Dictionary<string, string> { ["Stremio"] = "tt7441658", ["Imdb"] = "tt7441658", ["Mal"] = "33950" };
+        Assert.False(SplitSeason.CanBeParent(Map(), ova));
+        var show = new Dictionary<string, string> { ["Stremio"] = "tt7441658", ["Imdb"] = "tt7441658", ["Mal"] = "3" };
+        Assert.True(SplitSeason.CanBeParent(Map(), show));
+        // With the OVA no longer a candidate, the later season has one parent and is filed.
+        var parents = new[] { show, ova }.Count(s => SplitSeason.CanBeParent(Map(), s));
+        Assert.Equal(SplitSeason.Decision.File, SplitSeason.Decide(Map().Find("mal:61967"), parents, [1], 0, 0));
+    }
 
     [Fact]
     public void A_second_season_one_entry_is_never_the_parent()
@@ -106,8 +122,9 @@ public class SplitSeasonTests
                 )
             )
         );
-        Assert.True(SplitSeason.CanBeParent(map, "mal:10"));
-        Assert.False(SplitSeason.CanBeParent(map, "mal:11"));
+        Assert.True(SplitSeason.CanBeParent(map, Ids("mal:10")));
+        Assert.False(SplitSeason.CanBeParent(map, Ids("mal:11")));
+        Assert.False(SplitSeason.CanBeParent(map, new Dictionary<string, string> { ["Stremio"] = "tt1", ["Mal"] = "11" }));
     }
 
     [Theory]

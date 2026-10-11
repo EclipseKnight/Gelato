@@ -97,11 +97,13 @@ public static class CatalogIdentity
         Taken,
     }
 
-    /// <summary>What a found item's current provider ids say about taking this native id.</summary>
+    /// <summary>
+    /// What a found item's current provider ids say about taking this native id. Any of its
+    /// native ids counts: a metadata plugin may have added another one next to the first.
+    /// </summary>
     public static ClaimResult Claim(IReadOnlyDictionary<string, string> current, KeyValuePair<string, string> native) =>
-        NativeId(current) is not { } other ? ClaimResult.Take
-        : string.Equals(other.Key, native.Key, StringComparison.OrdinalIgnoreCase)
-            && string.Equals(other.Value, native.Value, StringComparison.OrdinalIgnoreCase) ? ClaimResult.Ours
+        current.Any(kv => Same(kv.Key, native.Key) && Same(kv.Value, native.Value)) ? ClaimResult.Ours
+        : NativeId(current) is null ? ClaimResult.Take
         : ClaimResult.Taken;
 
     /// <summary>

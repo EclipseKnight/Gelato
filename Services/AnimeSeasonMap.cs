@@ -174,10 +174,14 @@ public static class SplitSeason
     /// <summary>
     /// Whether a library series can be the show a later season is filed under: not one the list
     /// names as a part kept as its own show (a later season, an OVA, a second season 1 entry),
-    /// which carries the show's TVDB and IMDb ids too.
+    /// which carries the show's TVDB and IMDb ids too. Checked by the series' native ids, since
+    /// its Stremio id is the IMDb id when the entry has one.
     /// </summary>
-    public static bool CanBeParent(AnimeSeasonMap map, string? seriesStremioId) =>
-        !map.IsSplitEntry(seriesStremioId);
+    public static bool CanBeParent(AnimeSeasonMap map, IReadOnlyDictionary<string, string> seriesIds) =>
+        !seriesIds.Any(kv =>
+            CatalogIdentity.NativeProviders.Contains(kv.Key, StringComparer.OrdinalIgnoreCase)
+            && map.IsSplitEntry($"{kv.Key.ToLowerInvariant()}:{kv.Value}")
+        ) && !map.IsSplitEntry(seriesIds.GetValueOrDefault("Stremio"));
 
     public enum Decision
     {

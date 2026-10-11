@@ -84,6 +84,15 @@ public class IdentityHotfixTests
     }
 
     [Fact]
+    public void An_item_with_two_native_ids_found_by_the_second_one_is_ours()
+    {
+        var both = new Dictionary<string, string> { ["Imdb"] = "tt1", ["Kitsu"] = "12", ["AniDB"] = "77" };
+        Assert.Equal(CatalogIdentity.ClaimResult.Ours, CatalogIdentity.Claim(both, new("AniDB", "77")));
+        Assert.False(CatalogIdentity.FoundByImdb(both, new("AniDB", "77")));
+        Assert.Equal(CatalogIdentity.ClaimResult.Taken, CatalogIdentity.Claim(both, new("AniDB", "78")));
+    }
+
+    [Fact]
     public void Only_tv_rows_count_toward_the_show()
     {
         var map = AnimeSeasonMap.Parse(
