@@ -144,6 +144,37 @@ public class IdentityHotfixTests
     }
 
     [Fact]
+    public async Task The_saved_mapping_list_is_not_read_while_a_download_replaces_it()
+    {
+        var folder = Path.Combine(Path.GetTempPath(), "gelato-peek-" + Guid.NewGuid().ToString("N"));
+        var served = Path.Combine(folder, "served");
+        Directory.CreateDirectory(served);
+        File.WriteAllText(Path.Combine(served, "list.json"), """[{ "kitsu_id": 12, "tvdb_id": 500, "season": { "tvdb": 2 } }]""");
+        using var addon = new Fakes.FakeAddon(served);
+        addon.Delays["list.json"] = TimeSpan.FromSeconds(1);
+        var url = addon.BaseUrl + "/list.json";
+        try
+        {
+            // A day-old copy from the same URL: GetAsync downloads a new one.
+            var file = Path.Combine(folder, "anime-list-full.json");
+            File.WriteAllText(file, """[{ "kitsu_id": 12, "tvdb_id": 500, "season": { "tvdb": 1 } }]""");
+            File.WriteAllText(file + ".url", url);
+            File.SetLastWriteTimeUtc(file, DateTime.UtcNow.AddDays(-2));
+            var get = AnimeSeasonMapStore.GetAsync(url, folder, Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance, CancellationToken.None);
+            while (addon.Requests.IsEmpty)
+                await Task.Delay(10);
+            Assert.Null(AnimeSeasonMapStore.Peek(url, folder));
+            Assert.Equal(2, (await get)?.Find("kitsu:12")?.Season);
+            Assert.Equal(2, AnimeSeasonMapStore.Peek(url, folder)?.Find("kitsu:12")?.Season);
+        }
+        finally
+        {
+            AnimeSeasonMapStore.Reset();
+            Directory.Delete(folder, true);
+        }
+    }
+
+    [Fact]
     public async Task A_skipped_lookup_is_not_remembered()
     {
         var marked = false;

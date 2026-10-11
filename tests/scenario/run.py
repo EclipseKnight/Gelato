@@ -607,6 +607,27 @@ def sc_imdbclaim(jf, addon, c):
     repeat_check(jf, c)
 
 
+def sc_imdbshared(jf, addon, c):
+    """The IMDb-only show and the OVA that shares its IMDb id keep their own episodes."""
+    addon.stage = os.path.join(FIXTURES, "cinemeta", "stage1")
+    import_all(jf)
+    addon.stage = os.path.join(FIXTURES, "imdbclaim")
+    import_all(jf)
+    jf.restart(); jf.login()
+    addon.stage = os.path.join(FIXTURES, "cinemeta", "stage1")
+    import_all(jf)
+
+    def files():
+        return sorted((e.get("SeriesName"), e.get("Path", "").rsplit("/", 1)[-1]) for e in jf.items("Episode"))
+    want = [("Cine Show", "tt0000601:1:1"), ("Cine Show", "tt0000601:1:2"), ("Cine Show", "tt0000601:1:3"),
+            ("Cine Show OVA", "kitsu:603:1")]
+    c.eq("series", sorted(s["Name"] for s in jf.items("Series")), ["Cine Show", "Cine Show OVA"])
+    c.eq("episodes after the IMDb-only import", files(), want)
+    jf.task("SyncSeriesTrees")
+    c.eq("episodes after a tree sync", files(), want)
+    repeat_check(jf, c)
+
+
 def sc_rekeyguard(jf, addon, c):
     """An IMDb id another show already has is not taken over."""
     addon.stage = os.path.join(FIXTURES, "rekeyguard", "stage1")
@@ -679,6 +700,7 @@ SCENARIOS = {
     "search": sc_search,
     "cinemeta": sc_cinemeta,
     "imdbclaim": sc_imdbclaim,
+    "imdbshared": sc_imdbshared,
     "rekeyguard": sc_rekeyguard,
     "splitsafe": sc_splitsafe,
     "filedgrow": sc_filedgrow,

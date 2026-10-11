@@ -10,7 +10,6 @@ public static class AnimeSeasonMapStore
 {
     private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(60) };
     private static readonly SemaphoreSlim Gate = new(1, 1);
-    private static readonly object PeekLock = new();
     private static readonly TimeSpan MaxAge = TimeSpan.FromHours(24);
     private static readonly TimeSpan RetryAfter = TimeSpan.FromHours(1);
 
@@ -22,7 +21,8 @@ public static class AnimeSeasonMapStore
 
     /// <summary>
     /// The list as loaded, else the saved copy from that URL, without downloading anything
-    /// (for lookups that can't wait on a download). Null when there is neither.
+    /// (for lookups that can't wait on a download). Null when there is neither, and while
+    /// GetAsync holds the lock to load the list.
     /// </summary>
     public static AnimeSeasonMap? Peek(string? url, string folder)
     {
@@ -30,7 +30,9 @@ public static class AnimeSeasonMapStore
             return null;
         if (_map is { } map && _url == url)
             return map;
-        lock (PeekLock)
+        if (!Gate.Wait(0))
+            return null;
+        try
         {
             if (_map is { } loaded && _url == url)
                 return loaded;
@@ -46,16 +48,25 @@ public static class AnimeSeasonMapStore
             _map = parsed;
             return parsed;
         }
+        finally
+        {
+            Gate.Release();
+        }
     }
 
     /// <summary>Forgets the loaded list (tests).</summary>
     public static void Reset()
     {
-        lock (PeekLock)
+        Gate.Wait();
+        try
         {
             _map = null;
             _url = null;
             _loaded = default;
+        }
+        finally
+        {
+            Gate.Release();
         }
     }
 

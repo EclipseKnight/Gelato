@@ -350,13 +350,12 @@ public sealed class GelatoManager(
             || item.GetProviderId(MetadataProvider.Imdb) is not { Length: > 0 } imdb
         )
             return null;
+        var map = AnimeMap(user);
         query.HasAnyProviderId = new Dictionary<string, string> { [nameof(MetadataProvider.Imdb)] = imdb };
         return libraryManager
             .GetItemList(query)
             .Where(NotStream)
-            .FirstOrDefault(x =>
-                CatalogIdentity.ImdbMatchIsSame(x.ProviderIds, native, x is Series, AnimeMap(user))
-            );
+            .FirstOrDefault(x => CatalogIdentity.ImdbMatchIsSame(x.ProviderIds, native, x is Series, map));
     }
 
     /// <summary>
@@ -1033,14 +1032,13 @@ public sealed class GelatoManager(
             || string.IsNullOrWhiteSpace(imdb)
         )
             return null;
+        var map = AnimeMap();
         return FindByProviderIds(
                 new Dictionary<string, string> { [nameof(MetadataProvider.Imdb)] = imdb },
                 kind,
                 parent
             )
-            .FirstOrDefault(x =>
-                CatalogIdentity.ImdbMatchIsSame(x.ProviderIds, native, kind == BaseItemKind.Series, AnimeMap())
-            );
+            .FirstOrDefault(x => CatalogIdentity.ImdbMatchIsSame(x.ProviderIds, native, kind == BaseItemKind.Series, map));
     }
 
     /// <summary>
