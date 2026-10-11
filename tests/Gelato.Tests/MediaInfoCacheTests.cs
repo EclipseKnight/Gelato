@@ -23,14 +23,14 @@ public class MediaInfoCacheTests
     public void TrimDropsLeastRecentlyUsed()
     {
         MediaInfoCache.Clear();
-        MediaInfoCache.Put("a:-", E(1));
+        MediaInfoCache.Put("a:1", E(1));
         Thread.Sleep(5);
-        MediaInfoCache.Put("b:-", E(2));
+        MediaInfoCache.Put("b:2", E(2));
         Thread.Sleep(5);
-        MediaInfoCache.Get("a:-");
+        MediaInfoCache.Get("a:1");
         MediaInfoCache.Trim(1);
-        Assert.NotNull(MediaInfoCache.Get("a:-"));
-        Assert.Null(MediaInfoCache.Get("b:-"));
+        Assert.NotNull(MediaInfoCache.Get("a:1"));
+        Assert.Null(MediaInfoCache.Get("b:2"));
         MediaInfoCache.Clear();
     }
 
@@ -130,4 +130,36 @@ public class MediaInfoCacheTests
             Directory.Delete(dir, true);
         }
     }
+
+    [Fact]
+    public void InitDropsLegacyKeysWithoutAFileIndex()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "gelato-cache-" + Guid.NewGuid());
+        try
+        {
+            MediaInfoCache.Reset();
+            Directory.CreateDirectory(dir);
+            File.WriteAllText(
+                Path.Combine(dir, "media-info-cache.json"),
+                System.Text.Json.JsonSerializer.Serialize(new Dictionary<string, MediaInfoCache.Entry> { ["abc:-"] = E(1), ["abc:2"] = E(2) })
+            );
+            MediaInfoCache.Init(dir);
+            Assert.Null(MediaInfoCache.Get("abc:-"));
+            Assert.NotNull(MediaInfoCache.Get("abc:2"));
+            Assert.Equal(1, MediaInfoCache.Count);
+        }
+        finally
+        {
+            MediaInfoCache.Reset();
+            Directory.Delete(dir, true);
+        }
+    }
+
+    [Theory]
+    [InlineData(true, false, false, true)]
+    [InlineData(true, true, false, false)]
+    [InlineData(true, false, true, false)]
+    [InlineData(false, false, false, false)]
+    public void CacheRowsAreNotSubmittedToRemuxDb(bool contribute, bool wasRemuxDb, bool fromCache, bool expected) =>
+        Assert.Equal(expected, Gelato.RemuxDb.RemuxDbService.Submits(contribute, wasRemuxDb, fromCache));
 }

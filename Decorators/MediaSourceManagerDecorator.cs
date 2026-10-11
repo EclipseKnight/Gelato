@@ -832,7 +832,8 @@ public sealed class MediaSourceManagerDecorator(
         // RemuxDB's media info, or this server's cache of an earlier probe, plays as it is and is
         // probed afterwards (segments, attachments, chapters), unless it lacks what the playback
         // decides on.
-        var fromRemuxDb = owner.GelatoData<string>("mediaInfo") is RemuxDbService.SourceRemuxDb or RemuxDbService.SourceCache;
+        var fromCache = owner.GelatoData<string>("mediaInfo") == RemuxDbService.SourceCache;
+        var fromRemuxDb = fromCache || owner.GelatoData<string>("mediaInfo") == RemuxDbService.SourceRemuxDb;
         var needsProbe =
             NeedsProbe(selected)
             || (fromRemuxDb && RemuxDbMapper.LacksPlaybackInfo(selected.MediaStreams));
@@ -865,11 +866,11 @@ public sealed class MediaSourceManagerDecorator(
                         if (
                             owner is Video probedRow
                             && probedRow.HasStreamTag()
-                            && !remuxDb.OnProbed(probedRow, libraryOptions)
+                            && !remuxDb.OnProbed(probedRow, libraryOptions, fromCache)
                             && remuxDbStreams is not null
                         )
                         {
-                            // A dead link: keep RemuxDB's, and try again on the next playback.
+                            // A dead link: keep RemuxDB's or the cache's, and try again on the next playback.
                             remuxDb.RestoreStreams(owner.Id, remuxDbStreams);
                         }
                     },
@@ -1557,6 +1558,7 @@ public sealed class MediaSourceManagerDecorator(
 
                 var libraryOptions = _libraryManager.GetLibraryOptions(row);
                 var fromRemuxDbEntry = row.GelatoData<string>("mediaInfo") == RemuxDbService.SourceRemuxDb;
+                var fromCache = row.GelatoData<string>("mediaInfo") == RemuxDbService.SourceCache;
                 var before = remuxDb.GetStreams(rowId);
                 await ProbeStreamAsync(row, row.Path, CancellationToken.None)
                     .ConfigureAwait(false);
@@ -1583,9 +1585,9 @@ public sealed class MediaSourceManagerDecorator(
                                 return;
                             }
 
-                            if (!remuxDb.OnProbed(row, libraryOptions))
+                            if (!remuxDb.OnProbed(row, libraryOptions, fromCache))
                             {
-                                // A dead link: keep RemuxDB's, and try again on the next playback.
+                                // A dead link: keep RemuxDB's or the cache's, and try again on the next playback.
                                 remuxDb.RestoreStreams(rowId, before);
                                 return;
                             }

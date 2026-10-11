@@ -72,7 +72,9 @@ changelog: >
   The media-info cache keeps up to 2000 files (about 45 MB at measured entry sizes).
   Review fixes: probes skipped by the one-a-minute limit are written a minute later and on
   shutdown; a cache, report or state file that can't be read or written no longer fails a probe,
-  playback or tree sync; files without a file index are cached by size instead (a season pack shared one entry);
-  rows filled from the cache get one follow-up probe 30 s into their first playback, as RemuxDB rows do (segments, fonts, chapters); external
-  subtitles aren't cached; users with their own settings keep the exclude list and split-season
-  filing; ids inside an exclude-list note no longer count as entries.
+  playback or tree sync; files without a file index are cached by size instead (a season pack
+  shared one entry, and such entries are dropped on load); rows filled from the cache get one
+  follow-up probe 30 s into their first playback, as RemuxDB rows do (segments, fonts,
+  chapters), and that probe is not contributed to RemuxDB; external subtitles aren't cached;
+  users with their own settings keep the exclude list and split-season filing; ids inside an
+  exclude-list note no longer count as entries.

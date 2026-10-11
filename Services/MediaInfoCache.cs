@@ -5,7 +5,7 @@ using MediaBrowser.Model.Entities;
 namespace Gelato.Services;
 
 /// <summary>
-/// Probe results kept on this server by file identity (torrent info hash and file index), so a
+/// Probe results kept on this server by file identity (<see cref="Key"/>), so a
 /// file probed once fills in its tracks, runtime and size for every row and user that gets the
 /// same file, without asking an outside service. Capped; the least recently used go first.
 /// </summary>
@@ -74,7 +74,11 @@ public static class MediaInfoCache
                 Directory.CreateDirectory(folder);
                 if (File.Exists(file))
                     foreach (var (k, e) in JsonSerializer.Deserialize<Dictionary<string, Entry>>(File.ReadAllText(file)) ?? [])
-                        Entries[k] = e;
+                    {
+                        // "hash:-" keys (no file index) gave every file of a pack one entry.
+                        if (!k.EndsWith(":-", StringComparison.Ordinal))
+                            Entries[k] = e;
+                    }
             }
             catch (JsonException)
             {
