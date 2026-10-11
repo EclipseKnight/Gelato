@@ -338,7 +338,7 @@
                 report = await window.ApiClient.getJSON(window.ApiClient.getUrl('gelato/duplicates'));
               } catch (e) {
                 $('#dupSummary').textContent = 'No report yet. Use "Run report now".';
-                return;
+                return false;
               }
               const findings = report.findings || report.Findings || [];
               allItems = findings.flatMap((f) => f.Items ?? f.items ?? []);
@@ -372,6 +372,7 @@
                 html += `</details>`;
               }
               $('#dupList').innerHTML = html;
+              return true;
             }
 
             async function runReport() {
@@ -381,6 +382,10 @@
                 const tasks = await window.ApiClient.getJSON(window.ApiClient.getUrl('ScheduledTasks'));
                 const task = tasks.find((t) => t.Key === 'GelatoDuplicatesReport');
                 if (!task) throw new Error('task not found');
+                if (task.State !== 'Idle') {
+                  $('#dupSummary').textContent = 'The report is already running. Use "Reload" when it has finished.';
+                  return;
+                }
                 await window.ApiClient.ajax({ type: 'POST', url: window.ApiClient.getUrl('ScheduledTasks/Running/' + task.Id) });
                 $('#dupSummary').textContent = 'Report running…';
                 let status = null;
@@ -388,7 +393,7 @@
                   await new Promise((r) => setTimeout(r, 3000));
                   const t = await window.ApiClient.getJSON(window.ApiClient.getUrl('ScheduledTasks/' + task.Id));
                   if (t.State === 'Idle') {
-                    status = t.LastExecutionResult?.Status || 'Unknown';
+                    status = t.LastExecutionResult?.Status ?? '';
                     break;
                   }
                 }
@@ -396,9 +401,12 @@
                   $('#dupSummary').textContent = 'The report is still running. Use "Reload" when it has finished.';
                   return;
                 }
-                await loadReport();
-                if (status !== 'Completed')
-                  $('#dupSummary').textContent = `The report run ended with status ${status}; the report shown is from an earlier run. See the server log.`;
+                const loaded = await loadReport();
+                if (!status)
+                  $('#dupSummary').textContent += ' (The server did not say how the run ended.)';
+                else if (status !== 'Completed')
+                  $('#dupSummary').textContent = `The report run ended with status ${status}; `
+                    + (loaded ? 'the report shown is from an earlier run.' : 'there is no earlier report.') + ' See the server log.';
               } catch (e) {
                 console.error(e);
                 Dashboard.alert('Could not run the duplicates report.');

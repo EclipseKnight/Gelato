@@ -38,4 +38,17 @@ public class ConfigPageTests
         Assert.Contains("LastExecutionResult?.Status", page);
         Assert.Contains("The report is still running.", page);
     }
+
+    [Fact]
+    public void Report_run_does_not_misreport_its_outcome()
+    {
+        var page = Page();
+        // A second click while the task runs must not queue another run.
+        Assert.Contains("if (task.State !== 'Idle')", page);
+        // A missing result is not a failure.
+        Assert.DoesNotContain("|| 'Unknown'", page);
+        // The failure text only mentions an earlier report when one was loaded.
+        Assert.Contains("const loaded = await loadReport();", page);
+        Assert.Contains("there is no earlier report.", page);
+    }
 }
