@@ -25,4 +25,18 @@ public class FullPassTests
         Assert.Equal(now, FullPassState.Read(dir, old));
         Directory.Delete(dir, true);
     }
+
+    [Fact]
+    public void AnUnwritableFolderDoesNotThrow()
+    {
+        var blocker = Path.GetTempFileName(); // a file where the folder should be
+        try
+        {
+            Assert.False(FullPassState.Write(Path.Combine(blocker, "sub"), DateTime.UtcNow));
+        }
+        finally
+        {
+            File.Delete(blocker);
+        }
+    }
 }

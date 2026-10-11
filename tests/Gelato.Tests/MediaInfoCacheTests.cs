@@ -10,25 +10,27 @@ public class MediaInfoCacheTests
         new(ticks, "mkv", 1, 1, 1920, 1080, 0, false, [new MediaStream { Type = MediaStreamType.Video, Index = 0 }]);
 
     [Theory]
-    [InlineData("ABC", 2, "abc:2")]
-    [InlineData("abc", null, "abc:-")]
-    [InlineData(null, 2, null)]
-    [InlineData(" ", 1, null)]
-    public void KeyIsInfoHashAndFile(string? hash, int? idx, string? expected) =>
-        Assert.Equal(expected, MediaInfoCache.Key(hash, idx));
+    [InlineData("ABC", 2, 5L, "abc:2")]
+    [InlineData("abc", null, 734003200L, "abc:s734003200")]
+    [InlineData("abc", null, null, null)]
+    [InlineData("abc", null, 0L, null)]
+    [InlineData(null, 2, 5L, null)]
+    [InlineData(" ", 1, null, null)]
+    public void KeyIsInfoHashAndFileOrSize(string? hash, int? idx, long? size, string? expected) =>
+        Assert.Equal(expected, MediaInfoCache.Key(hash, idx, size));
 
     [Fact]
     public void TrimDropsLeastRecentlyUsed()
     {
         MediaInfoCache.Clear();
-        MediaInfoCache.Put("a:-", E(1));
+        MediaInfoCache.Put("a:1", E(1));
         Thread.Sleep(5);
-        MediaInfoCache.Put("b:-", E(2));
+        MediaInfoCache.Put("b:2", E(2));
         Thread.Sleep(5);
-        MediaInfoCache.Get("a:-");
+        MediaInfoCache.Get("a:1");
         MediaInfoCache.Trim(1);
-        Assert.NotNull(MediaInfoCache.Get("a:-"));
-        Assert.Null(MediaInfoCache.Get("b:-"));
+        Assert.NotNull(MediaInfoCache.Get("a:1"));
+        Assert.Null(MediaInfoCache.Get("b:2"));
         MediaInfoCache.Clear();
     }
 
@@ -64,4 +66,100 @@ public class MediaInfoCacheTests
         var bytes = System.Text.Encoding.UTF8.GetByteCount(System.Text.Json.JsonSerializer.Serialize(entry));
         Assert.True((long)bytes * MediaInfoCache.MaxEntries <= 50L * 1024 * 1024, $"{bytes} bytes per entry");
     }
+
+    [Fact]
+    public void ThrottledEntriesReachTheFileOnFlush()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "gelato-cache-" + Guid.NewGuid());
+        try
+        {
+            MediaInfoCache.Reset();
+            MediaInfoCache.Init(dir);
+            MediaInfoCache.Put("a:1", E(1)); // first write goes straight out
+            MediaInfoCache.Put("b:2", E(2)); // within the minute: kept in memory
+            var file = Path.Combine(dir, "media-info-cache.json");
+            Assert.DoesNotContain("b:2", File.ReadAllText(file));
+            MediaInfoCache.Flush();
+            Assert.Contains("b:2", File.ReadAllText(file));
+        }
+        finally
+        {
+            MediaInfoCache.Reset();
+            Directory.Delete(dir, true);
+        }
+    }
+
+    [Fact]
+    public void AnUnwritableFolderNeverFailsAPut()
+    {
+        var blocker = Path.GetTempFileName(); // a file where the folder should be
+        try
+        {
+            MediaInfoCache.Reset();
+            MediaInfoCache.Init(Path.Combine(blocker, "sub"));
+            Assert.Null(MediaInfoCache.File_);
+            MediaInfoCache.Put("a:1", E(1));
+            MediaInfoCache.Flush();
+            Assert.NotNull(MediaInfoCache.Get("a:1"));
+        }
+        finally
+        {
+            MediaInfoCache.Reset();
+            File.Delete(blocker);
+        }
+    }
+
+    [Fact]
+    public void AFailedWriteIsKeptOwedAndNeverThrows()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "gelato-cache-" + Guid.NewGuid());
+        try
+        {
+            MediaInfoCache.Reset();
+            MediaInfoCache.Init(dir);
+            Directory.CreateDirectory(Path.Combine(dir, "media-info-cache.json")); // the move onto it fails
+            MediaInfoCache.Put("a:1", E(1));
+            Assert.True(MediaInfoCache.Dirty);
+            MediaInfoCache.Flush();
+            Assert.True(MediaInfoCache.Dirty);
+            Assert.NotNull(MediaInfoCache.Get("a:1"));
+        }
+        finally
+        {
+            MediaInfoCache.Reset();
+            Directory.Delete(dir, true);
+        }
+    }
+
+    [Fact]
+    public void InitDropsLegacyKeysWithoutAFileIndex()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "gelato-cache-" + Guid.NewGuid());
+        try
+        {
+            MediaInfoCache.Reset();
+            Directory.CreateDirectory(dir);
+            File.WriteAllText(
+                Path.Combine(dir, "media-info-cache.json"),
+                System.Text.Json.JsonSerializer.Serialize(new Dictionary<string, MediaInfoCache.Entry> { ["abc:-"] = E(1), ["abc:2"] = E(2) })
+            );
+            MediaInfoCache.Init(dir);
+            Assert.Null(MediaInfoCache.Get("abc:-"));
+            Assert.NotNull(MediaInfoCache.Get("abc:2"));
+            Assert.Equal(1, MediaInfoCache.Count);
+        }
+        finally
+        {
+            MediaInfoCache.Reset();
+            Directory.Delete(dir, true);
+        }
+    }
+
+    [Theory]
+    [InlineData(true, false, false, true)]
+    [InlineData(true, true, false, false)]
+    [InlineData(true, false, true, false)]
+    [InlineData(false, false, false, false)]
+    public void CacheRowsAreNotSubmittedToRemuxDb(bool contribute, bool wasRemuxDb, bool fromCache, bool expected) =>
+        Assert.Equal(expected, Gelato.RemuxDb.RemuxDbService.Submits(contribute, wasRemuxDb, fromCache));
 }

@@ -15,7 +15,8 @@ namespace Gelato.RemuxDb;
 /// </summary>
 /// <remarks>
 /// A row records where its media info came from in its Gelato data (<c>mediaInfo</c>):
-/// <c>remuxdb</c> or <c>probe</c>. A probe of the file itself is never replaced by RemuxDB's.
+/// <c>remuxdb</c>, <c>cache</c> (this server's earlier probe of the file) or <c>probe</c>. A probe
+/// of the file itself is never replaced by RemuxDB's.
 /// </remarks>
 public sealed class RemuxDbService(
     RemuxDbClient client,
@@ -38,7 +39,7 @@ public sealed class RemuxDbService(
         if (!CacheEnabled)
             return null;
         Gelato.Services.MediaInfoCache.Init(Path.Combine(appPaths.DataPath, "gelato"));
-        return Gelato.Services.MediaInfoCache.Key(identity.InfoHash, identity.FileIdx);
+        return Gelato.Services.MediaInfoCache.Key(identity.InfoHash, identity.FileIdx, identity.Size);
     }
 
     private static bool Enabled => GelatoPlugin.Instance?.Configuration.RemuxDbEnabled ?? false;
@@ -174,10 +175,13 @@ public sealed class RemuxDbService(
     /// <summary>
     /// Called after a row's stream was probed: marks its media info as probed and queues it for
     /// RemuxDB when the file's torrent is known. False when the probe found no video.
+    /// <paramref name="fromCache"/>: the row played on the media-info cache, read before the probe.
     /// </summary>
-    public bool OnProbed(Video row, LibraryOptions libraryOptions)
+    public bool OnProbed(Video row, LibraryOptions libraryOptions, bool fromCache = false)
     {
         var streams = mediaStreams.GetMediaStreams(new MediaStreamQuery { ItemId = row.Id });
+        // External subtitles belong to one row's files, not to the torrent's file.
+        var fileStreams = streams.Where(s => !s.IsExternal).ToList();
         if (row.RunTimeTicks is not > 0 || streams.All(s => s.Type != MediaStreamType.Video))
             return false;
 
@@ -202,14 +206,13 @@ public sealed class RemuxDbService(
                     row.Width,
                     row.Height,
                     row.DefaultVideoStreamIndex,
-                    streams.Any(s => s.Type == MediaStreamType.Subtitle),
-                    streams.ToList()
+                    fileStreams.Any(s => s.Type == MediaStreamType.Subtitle),
+                    fileStreams
                 )
             );
         }
 
-        // A file RemuxDB knew: nothing to send.
-        if (!Contribute || wasRemuxDb)
+        if (!Submits(Contribute, wasRemuxDb, fromCache))
             return true;
 
         // The probe leaves out subtitles the library does not allow: the list is not the file's.
@@ -252,6 +255,13 @@ public sealed class RemuxDbService(
         contributor.Enqueue(title, submission);
         return true;
     }
+
+    /// <summary>
+    /// Whether a probe goes to RemuxDB: not for a file RemuxDB knew, nor for a row filled from the
+    /// cache (its file was probed, and sent if it was going to be, before).
+    /// </summary>
+    public static bool Submits(bool contribute, bool wasRemuxDb, bool fromCache) =>
+        contribute && !wasRemuxDb && !fromCache;
 
     /// <summary>The row's stored streams.</summary>
     public IReadOnlyList<MediaStream> GetStreams(Guid itemId) =>
