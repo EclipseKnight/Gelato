@@ -65,6 +65,10 @@ changelog: >
   again, and the weekly pass runs 2 requests at a time instead of 4.
   Anime mapping list: https only (http to local addresses), 64 MB limit, refetched when the URL
   changes, retried within an hour after a failure. Year ranges with an en dash are read.
+  The mapping list download gets 60 seconds in total, body included; a server that stalls after
+  the headers no longer holds up the catalog import. Plain http is accepted only for localhost
+  and literal private IPv4 addresses (10.x, 172.16-31.x, 192.168.x); LAN host names such as
+  nas.local or a Docker service name need https.
   Probe results are kept on this server by file (info hash and file index, up to 2000 files),
   so a file probed once shows its tracks for every row and user that gets it; off switch on the
   plugin page.
