@@ -1,0 +1,15 @@
+{
+ "meta": {
+  "id": "tt0000820",
+  "type": "series",
+  "name": "Kept Show",
+  "releaseInfo": "2020-2021",
+  "status": "Ended",
+  "videos": [
+   { "id": "tt0000820:1:1", "title": "Episode 1", "season": 1, "episode": 1, "released": "2020-01-01T00:00:00.000Z" },
+   { "id": "tt0000820:2:1", "title": "Own S2 Episode 1", "season": 2, "episode": 1, "released": "2021-01-01T00:00:00.000Z" },
+   { "id": "tt0000820:2:2", "title": "Own S2 Episode 2", "season": 2, "episode": 2, "released": "2021-01-08T00:00:00.000Z" }
+  ],
+  "_tvdbId": "900820"
+ }
+}

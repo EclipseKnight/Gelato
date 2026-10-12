@@ -1,0 +1,14 @@
+{
+ "meta": {
+  "id": "mal:80013",
+  "type": "series",
+  "name": "Fill Show Season 3 Part 2",
+  "releaseInfo": "2022-2022",
+  "status": "Ended",
+  "videos": [
+   { "id": "mal:80013:3", "title": "Cour B Episode 3", "season": 1, "episode": 3, "released": "2022-07-01T00:00:00.000Z" },
+   { "id": "mal:80013:4", "title": "Cour B Episode 4", "season": 1, "episode": 4, "released": "2022-07-08T00:00:00.000Z" }
+  ],
+  "_tvdbId": "900810"
+ }
+}

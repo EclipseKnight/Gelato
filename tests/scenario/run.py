@@ -397,8 +397,11 @@ def season_files(jf, series, season):
 
 
 def sc_splitfill(jf, addon, c):
-    """The show keeps its own season 2; the entry only fills the numbers it lacks, or is left out."""
-    addon.stage = os.path.join(FIXTURES, "splitfill")
+    """The show keeps its own season 2; the entry only fills the numbers it lacks, or is left out.
+    Then the show lists a new season 2 episode, and two cours of season 3 come in, the second
+    numbered on from the first: the season 2 that mixes the show's own and a filed episode takes
+    the new one, and both cours are filed."""
+    addon.stage = os.path.join(FIXTURES, "splitfill", "stage1")
     import_all(jf)
     c.eq("series (no duplicate season shows)", sorted(s["Name"] for s in jf.items("Series")), ["Fill Show", "Kept Show"])
     c.eq("Fill Show season 2: own 1-2, the entry's 3", season_files(jf, "Fill Show", 2),
@@ -407,6 +410,19 @@ def sc_splitfill(jf, addon, c):
          [(1, "tt0000820:2:1"), (2, "tt0000820:2:2")])
     c.true("left out logged", any("Kept Show Season 2 (mal:80021) left out" in l for l in jf.all_log()))
     c.eq("episodes", len(jf.items("Episode")), 7)
+    # The stage goes live before the restart: the restart clears the meta cache and the
+    # startup sync refetches, so the new copy must already be served by the time it runs.
+    addon.stage = os.path.join(FIXTURES, "splitfill", "stage2")
+    jf.restart(); jf.login()
+    import_all(jf)
+    c.eq("series after stage 2", sorted(s["Name"] for s in jf.items("Series")), ["Fill Show", "Kept Show"])
+    c.eq("Fill Show season 2 gets the show's new 4", season_files(jf, "Fill Show", 2),
+         [(1, "tt0000810:2:1"), (2, "tt0000810:2:2"), (3, "mal:80011:3"), (4, "tt0000810:2:4")])
+    c.eq("Fill Show season 3: the first cour, then the second filed after it", season_files(jf, "Fill Show", 3),
+         [(1, "mal:80012:1"), (2, "mal:80012:2"), (3, "mal:80013:3"), (4, "mal:80013:4")])
+    c.eq("Kept Show season 2 after stage 2", season_files(jf, "Kept Show", 2),
+         [(1, "tt0000820:2:1"), (2, "tt0000820:2:2")])
+    c.eq("episodes after stage 2", len(jf.items("Episode")), 12)
     repeat_check(jf, c)
 
 

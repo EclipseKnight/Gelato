@@ -1,0 +1,14 @@
+{
+ "meta": {
+  "id": "mal:80021",
+  "type": "series",
+  "name": "Kept Show Season 2",
+  "releaseInfo": "2021-2021",
+  "status": "Ended",
+  "videos": [
+   { "id": "mal:80021:1", "title": "Entry Episode 1", "season": 1, "episode": 1, "released": "2021-01-01T00:00:00.000Z" },
+   { "id": "mal:80021:2", "title": "Entry Episode 2", "season": 1, "episode": 2, "released": "2021-01-08T00:00:00.000Z" }
+  ],
+  "_tvdbId": "900820"
+ }
+}

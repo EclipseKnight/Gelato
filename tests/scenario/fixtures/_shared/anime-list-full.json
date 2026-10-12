@@ -63,6 +63,22 @@
  },
  {
   "type": "TV",
+  "mal_id": 80012,
+  "tvdb_id": 900810,
+  "season": {
+   "tvdb": 3
+  }
+ },
+ {
+  "type": "TV",
+  "mal_id": 80013,
+  "tvdb_id": 900810,
+  "season": {
+   "tvdb": 3
+  }
+ },
+ {
+  "type": "TV",
   "mal_id": 80021,
   "tvdb_id": 900820,
   "season": {
