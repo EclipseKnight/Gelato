@@ -240,9 +240,13 @@ public class GelatoStremioProvider(
     /// and answers 404 for an IMDb id - so asking for one id alone can fail although the addon has
     /// the meta under the other one.
     /// </summary>
-    public async Task<StremioMeta?> GetMetaAsync(StremioMeta meta, TimeSpan? ttl = null)
+    /// <param name="ownIdFirst">Ask by the result's own id before its IMDb id: an anime catalogue
+    /// part kept as its own show (an OVA, a later season) carries the IMDb id of the whole show,
+    /// whose meta that id would return.</param>
+    public async Task<StremioMeta?> GetMetaAsync(StremioMeta meta, TimeSpan? ttl = null, bool ownIdFirst = false)
     {
-        return await GetMetaAsync([meta.ImdbId, meta.Id], meta.Type, ttl).ConfigureAwait(false);
+        return await GetMetaAsync(ownIdFirst ? [meta.Id, meta.ImdbId] : [meta.ImdbId, meta.Id], meta.Type, ttl)
+            .ConfigureAwait(false);
     }
 
     /// <summary>
@@ -260,7 +264,8 @@ public class GelatoStremioProvider(
     /// back to the addon's own id.
     /// </remarks>
     private static IEnumerable<string?> MetaIdCandidates(
-        IReadOnlyDictionary<string, string> providerIds
+        IReadOnlyDictionary<string, string> providerIds,
+        bool nativeFirst = false
     )
     {
         string? Id(string provider, string prefix = "")
@@ -272,6 +277,8 @@ public class GelatoStremioProvider(
                 : null;
         }
 
+        if (nativeFirst && CatalogIdentity.NativeId(providerIds) is { } native)
+            yield return $"{native.Key.ToLowerInvariant()}:{native.Value}";
         yield return Id(nameof(MetadataProvider.Imdb));
         yield return Id(nameof(MetadataProvider.Tmdb), "tmdb:");
         // The id the addon itself gave the item, already in the addon's own format.
@@ -290,14 +297,17 @@ public class GelatoStremioProvider(
     public static bool HasMetaId(IReadOnlyDictionary<string, string> providerIds) =>
         MetaIdCandidates(providerIds).Any(id => !string.IsNullOrWhiteSpace(id));
 
-    /// <inheritdoc cref="GetMetaAsync(StremioMeta, TimeSpan?)"/>
+    /// <inheritdoc cref="GetMetaAsync(StremioMeta, TimeSpan?, bool)"/>
+    /// <param name="nativeFirst">Ask by the native catalogue id before the others (see
+    /// <see cref="GetMetaAsync(StremioMeta, TimeSpan?, bool)"/>).</param>
     public async Task<StremioMeta?> GetMetaAsync(
         IReadOnlyDictionary<string, string> providerIds,
         StremioMediaType mediaType,
-        TimeSpan? ttl = null
+        TimeSpan? ttl = null,
+        bool nativeFirst = false
     )
     {
-        return await GetMetaAsync(MetaIdCandidates(providerIds), mediaType, ttl)
+        return await GetMetaAsync(MetaIdCandidates(providerIds, nativeFirst), mediaType, ttl)
             .ConfigureAwait(false);
     }
 

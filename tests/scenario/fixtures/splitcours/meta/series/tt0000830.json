@@ -1,0 +1,14 @@
+{
+ "meta": {
+  "id": "tt0000830",
+  "type": "series",
+  "name": "Cour Show",
+  "releaseInfo": "2020-2021",
+  "status": "Ended",
+  "videos": [
+   { "id": "tt0000830:1:1", "title": "Episode 1", "season": 1, "episode": 1, "released": "2020-01-01T00:00:00.000Z" },
+   { "id": "tt0000830:1:2", "title": "Episode 2", "season": 1, "episode": 2, "released": "2020-01-08T00:00:00.000Z" }
+  ],
+  "_tvdbId": "900830"
+ }
+}

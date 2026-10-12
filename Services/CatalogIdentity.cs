@@ -85,6 +85,23 @@ public static class CatalogIdentity
             _ => false,
         };
 
+    /// <summary>
+    /// Of several items found for an entry without a native id (by its IMDb or other ids only),
+    /// the one it is. Anime catalogue parts kept as their own show (an OVA, a later season) carry
+    /// the show's IMDb id too: an item the mapping list names as such a part comes last, then
+    /// one with a native id, so the show added from a catalogue without native ids is found.
+    /// Ties keep the order given.
+    /// </summary>
+    public static T? PickForIdsOnly<T>(
+        IEnumerable<T> found,
+        Func<T, IReadOnlyDictionary<string, string>> ids,
+        AnimeSeasonMap? map
+    ) =>
+        found
+            .OrderBy(x => map is not null && !SplitSeason.CanBeParent(map, ids(x)) ? 1 : 0)
+            .ThenBy(x => NativeId(ids(x)) is null ? 0 : 1)
+            .FirstOrDefault();
+
     public enum ClaimResult
     {
         /// <summary>No native id yet: the item takes this one.</summary>
@@ -105,13 +122,6 @@ public static class CatalogIdentity
         current.Any(kv => Same(kv.Key, native.Key) && Same(kv.Value, native.Value)) ? ClaimResult.Ours
         : NativeId(current) is null ? ClaimResult.Take
         : ClaimResult.Taken;
-
-    /// <summary>
-    /// Whether a found item was reached through its IMDb id rather than by this native id, so its
-    /// claim has to be checked against its saved ids under the claim gate.
-    /// </summary>
-    public static bool FoundByImdb(IReadOnlyDictionary<string, string> found, KeyValuePair<string, string> native) =>
-        Claim(found, native) != ClaimResult.Ours;
 
     public static bool IsAliasKey(string key) =>
         key.StartsWith(AliasKey, StringComparison.OrdinalIgnoreCase);

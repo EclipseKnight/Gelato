@@ -391,6 +391,38 @@ def sc_splitsafe(jf, addon, c):
     repeat_check(jf, c)
 
 
+def season_files(jf, series, season):
+    return sorted((e.get("IndexNumber"), e.get("Path", "").rsplit("/", 1)[-1]) for e in jf.items("Episode")
+                  if e.get("SeriesName") == series and e.get("ParentIndexNumber") == season)
+
+
+def sc_splitfill(jf, addon, c):
+    """The show keeps its own season 2; the entry only fills the numbers it lacks, or is left out."""
+    addon.stage = os.path.join(FIXTURES, "splitfill")
+    import_all(jf)
+    c.eq("series (no duplicate season shows)", sorted(s["Name"] for s in jf.items("Series")), ["Fill Show", "Kept Show"])
+    c.eq("Fill Show season 2: own 1-2, the entry's 3", season_files(jf, "Fill Show", 2),
+         [(1, "tt0000810:2:1"), (2, "tt0000810:2:2"), (3, "mal:80011:3")])
+    c.eq("Kept Show season 2: its own only", season_files(jf, "Kept Show", 2),
+         [(1, "tt0000820:2:1"), (2, "tt0000820:2:2")])
+    c.true("left out logged", any("Kept Show Season 2 (mal:80021) left out" in l for l in jf.all_log()))
+    c.eq("episodes", len(jf.items("Episode")), 7)
+    repeat_check(jf, c)
+
+
+def sc_splitcours(jf, addon, c):
+    """Two cours of one season, listed second part first: the first is filed, the second is its own show."""
+    addon.stage = os.path.join(FIXTURES, "splitcours")
+    import_all(jf)
+    c.eq("series", sorted(s["Name"] for s in jf.items("Series")), ["Cour Show", "Cour Show Season 2 Part 2"])
+    c.eq("Cour Show season 2 is the first cour", season_files(jf, "Cour Show", 2),
+         [(1, "mal:80031:1"), (2, "mal:80031:2")])
+    c.eq("the second cour keeps its episodes", season_files(jf, "Cour Show Season 2 Part 2", 1),
+         [(1, "mal:80032:1"), (2, "mal:80032:2")])
+    c.eq("episodes", len(jf.items("Episode")), 6)
+    repeat_check(jf, c)
+
+
 def sc_apikey(jf, addon, c):
     """Item read, media segments and delete with an API key and no user id."""
     addon.stage = os.path.join(FIXTURES, "unaired")
@@ -622,6 +654,9 @@ def sc_imdbshared(jf, addon, c):
     want = [("Cine Show", "tt0000601:1:1"), ("Cine Show", "tt0000601:1:2"), ("Cine Show", "tt0000601:1:3"),
             ("Cine Show OVA", "kitsu:603:1")]
     c.eq("series", sorted(s["Name"] for s in jf.items("Series")), ["Cine Show", "Cine Show OVA"])
+    # The IMDb-only import finds the show, never the OVA (see CatalogIdentity.PickForIdsOnly).
+    c.eq("Cine Show still without a native id", {k.lower(): v for k, v in ids_of(jf, "Cine Show").items()}.get("kitsu"), None)
+    c.eq("OVA keeps its native id", {k.lower(): v for k, v in ids_of(jf, "Cine Show OVA").items()}.get("kitsu"), "603")
     c.eq("episodes after the IMDb-only import", files(), want)
     jf.task("SyncSeriesTrees")
     c.eq("episodes after a tree sync", files(), want)
@@ -703,6 +738,8 @@ SCENARIOS = {
     "imdbshared": sc_imdbshared,
     "rekeyguard": sc_rekeyguard,
     "splitsafe": sc_splitsafe,
+    "splitfill": sc_splitfill,
+    "splitcours": sc_splitcours,
     "filedgrow": sc_filedgrow,
     "apikey": sc_apikey,
     "dupreport": sc_dupreport,

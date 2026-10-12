@@ -52,5 +52,37 @@
   "imdb_id": [
    "tt0000601"
   ]
+ },
+ {
+  "type": "TV",
+  "mal_id": 80011,
+  "tvdb_id": 900810,
+  "season": {
+   "tvdb": 2
+  }
+ },
+ {
+  "type": "TV",
+  "mal_id": 80021,
+  "tvdb_id": 900820,
+  "season": {
+   "tvdb": 2
+  }
+ },
+ {
+  "type": "TV",
+  "mal_id": 80031,
+  "tvdb_id": 900830,
+  "season": {
+   "tvdb": 2
+  }
+ },
+ {
+  "type": "TV",
+  "mal_id": 80032,
+  "tvdb_id": 900830,
+  "season": {
+   "tvdb": 2
+  }
  }
 ]

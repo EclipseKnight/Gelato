@@ -164,9 +164,10 @@ public static class SplitSeason
     }
 
     /// <summary>
-    /// The order deferred entries are placed in: by catalogue id length, then text (numeric order
-    /// for ids of one kind; the earlier part usually has the lower id), so within one import run
-    /// the result doesn't depend on the order the entries were found in.
+    /// The order deferred entries are placed in: by catalogue id length, then text, across id
+    /// kinds (so mal:9 comes before kitsu:50024). Within one kind that is numeric order; across
+    /// kinds it means nothing. Its only purpose is a fixed order, so within one import run the
+    /// result doesn't depend on the order the entries were found in.
     /// </summary>
     public static IEnumerable<StremioMeta> FilingOrder(IEnumerable<StremioMeta> entries) =>
         entries.OrderBy(m => m.Id.Length).ThenBy(m => m.Id, StringComparer.OrdinalIgnoreCase);
@@ -183,31 +184,51 @@ public static class SplitSeason
             && map.IsSplitEntry($"{kv.Key.ToLowerInvariant()}:{kv.Value}")
         ) && !map.IsSplitEntry(seriesIds.GetValueOrDefault("Stremio"));
 
+    /// <summary>
+    /// The provider id a series keeps the add-on's TVDB id of the whole show under (its
+    /// <c>_tvdbId</c>), so a later season finds the show by it. Not Jellyfin's TVDB id: Jellyfin
+    /// lists series that share that one as one show and gives their episodes one watch state,
+    /// and stages, cours and parts kept as their own show all report the show's.
+    /// </summary>
+    public const string ShowTvdbKey = "GelatoShowTvdb";
+
+    /// <summary>
+    /// The key a series the list names as a part kept as its own show is told apart by: its
+    /// native id (<c>kitsu:603</c>), stored as Jellyfin's custom provider id. Such a part carries
+    /// the show's IMDb id, and Jellyfin lists series by their first user-data key (the custom
+    /// id, then TVDB, then IMDb): without its own, it is listed as the show and its episodes share
+    /// the show's watch state. Null for other series and without the list.
+    /// </summary>
+    public static string? OwnKey(AnimeSeasonMap? map, IReadOnlyDictionary<string, string> seriesIds) =>
+        map is not null && !CanBeParent(map, seriesIds) && CatalogIdentity.NativeId(seriesIds) is { } native
+            ? $"{native.Key.ToLowerInvariant()}:{native.Value}"
+            : null;
+
     public enum Decision
     {
         /// <summary>Import as its own show, as before.</summary>
         OwnShow,
 
-        /// <summary>The parent has the whole season already: nothing filed, the entry left out.</summary>
+        /// <summary>The parent has every episode number of the entry already: nothing filed, the entry left out.</summary>
         ParentHasSeason,
 
-        /// <summary>File the entry's episodes as the season of the parent.</summary>
+        /// <summary>File the entry's episodes the parent's season lacks (see <see cref="ToFile"/>).</summary>
         File,
     }
 
     /// <param name="link">The mapping link of the entry, if any.</param>
     /// <param name="parents">Library series with the link's TVDB id (not the entry itself).</param>
     /// <param name="entrySeasons">Season numbers in the entry's own episode list (0 left out).</param>
-    /// <param name="parentSeasonEpisodes">Episodes the parent has in that season.</param>
-    /// <param name="parentSeasonFiledFromEntry">How many of those were filed from this entry.</param>
-    /// <param name="entryEpisodes">Episodes in the entry's own episode list.</param>
+    /// <param name="entryEpisodes">Episode numbers in the entry's own episode list.</param>
+    /// <param name="parentOwn">Episode numbers the parent has in that season of its own (not filed from an entry).</param>
+    /// <param name="otherEntries">Episode numbers in that season filed from another catalogue entry.</param>
     public static Decision Decide(
         AnimeSeasonMap.Link? link,
         int parents,
         IReadOnlyCollection<int> entrySeasons,
-        int parentSeasonEpisodes,
-        int parentSeasonFiledFromEntry,
-        int entryEpisodes
+        IReadOnlyCollection<int> entryEpisodes,
+        IReadOnlyCollection<int> parentOwn,
+        IReadOnlyCollection<int> otherEntries
     )
     {
         // Only with a confident mapping: one show with that TVDB id, a later season (season 1
@@ -216,12 +237,22 @@ public static class SplitSeason
             return Decision.OwnShow;
         if (entrySeasons.Count != 1)
             return Decision.OwnShow;
-        // Episodes the parent got from elsewhere are never moved or renumbered. When there are at
-        // least as many as the entry has, the season is there already and the entry is left out;
-        // otherwise (a second cour of the same season) it stays a show of its own.
-        var fromElsewhere = parentSeasonEpisodes - parentSeasonFiledFromEntry;
-        if (fromElsewhere > 0)
-            return fromElsewhere >= entryEpisodes ? Decision.ParentHasSeason : Decision.OwnShow;
-        return Decision.File;
+        // Another entry filed this season already and the numbers clash: two parts of the season
+        // that each count from 1 (two cours). This one stays a show of its own instead of being
+        // dropped or mixed in.
+        if (entryEpisodes.Any(otherEntries.Contains))
+            return Decision.OwnShow;
+        // The parent's own episodes in that season are never moved, renumbered or overwritten:
+        // the entry only fills the numbers they lack (an airing season the show's own catalogue
+        // hasn't caught up with). With nothing to fill, the entry is left out.
+        // Edge case: a link carries no episode offset, so numbers are compared as they are. A
+        // cour that counts from 1, filed into a parent whose own season is behind, can fill the
+        // parent's missing numbers with the wrong episodes. Only an entry whose numbers have no
+        // place (they clash with another entry's, above) stays a show of its own.
+        return ToFile(entryEpisodes, parentOwn).Count == 0 ? Decision.ParentHasSeason : Decision.File;
     }
+
+    /// <summary>The entry's episode numbers the parent's season doesn't have of its own.</summary>
+    public static IReadOnlySet<int> ToFile(IEnumerable<int> entryEpisodes, IEnumerable<int> parentOwn) =>
+        entryEpisodes.Except(parentOwn).ToHashSet();
 }

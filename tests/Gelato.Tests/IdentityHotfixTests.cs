@@ -76,11 +76,10 @@ public class IdentityHotfixTests
         // The found copy already carries the season 1 entry's id: reached through the IMDb id,
         // so it goes through the gate, where the saved ids say another entry took it.
         var taken = new Dictionary<string, string> { ["Imdb"] = "tt1", ["Kitsu"] = "12" };
-        Assert.True(CatalogIdentity.FoundByImdb(taken, ova));
         Assert.Equal(CatalogIdentity.ClaimResult.Taken, CatalogIdentity.Claim(taken, ova));
-        Assert.True(CatalogIdentity.FoundByImdb(new Dictionary<string, string> { ["Imdb"] = "tt1" }, ova));
+        Assert.Equal(CatalogIdentity.ClaimResult.Take, CatalogIdentity.Claim(new Dictionary<string, string> { ["Imdb"] = "tt1" }, ova));
         // Found by its own native id: no claim to check.
-        Assert.False(CatalogIdentity.FoundByImdb(new Dictionary<string, string> { ["Imdb"] = "tt1", ["kitsu"] = "14" }, ova));
+        Assert.Equal(CatalogIdentity.ClaimResult.Ours, CatalogIdentity.Claim(new Dictionary<string, string> { ["Imdb"] = "tt1", ["kitsu"] = "14" }, ova));
     }
 
     [Fact]
@@ -88,7 +87,6 @@ public class IdentityHotfixTests
     {
         var both = new Dictionary<string, string> { ["Imdb"] = "tt1", ["Kitsu"] = "12", ["AniDB"] = "77" };
         Assert.Equal(CatalogIdentity.ClaimResult.Ours, CatalogIdentity.Claim(both, new("AniDB", "77")));
-        Assert.False(CatalogIdentity.FoundByImdb(both, new("AniDB", "77")));
         Assert.Equal(CatalogIdentity.ClaimResult.Taken, CatalogIdentity.Claim(both, new("AniDB", "78")));
     }
 

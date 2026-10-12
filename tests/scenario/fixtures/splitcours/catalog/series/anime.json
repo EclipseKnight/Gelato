@@ -1,0 +1,28 @@
+{
+ "metas": [
+  {
+   "id": "tt0000830",
+   "type": "series",
+   "name": "Cour Show",
+   "releaseInfo": "2020-2021",
+   "status": "Ended",
+   "_tvdbId": "900830"
+  },
+  {
+   "id": "mal:80032",
+   "type": "series",
+   "name": "Cour Show Season 2 Part 2",
+   "releaseInfo": "2021-2021",
+   "status": "Ended",
+   "_tvdbId": "900830"
+  },
+  {
+   "id": "mal:80031",
+   "type": "series",
+   "name": "Cour Show Season 2",
+   "releaseInfo": "2021-2021",
+   "status": "Ended",
+   "_tvdbId": "900830"
+  }
+ ]
+}
