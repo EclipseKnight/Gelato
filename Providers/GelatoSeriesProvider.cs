@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using Gelato.Services;
 using Jellyfin.Data.Enums;
 using Jellyfin.Data.Events;
 using MediaBrowser.Common.Net;
@@ -159,7 +160,7 @@ public sealed class GelatoSeriesProvider : IRemoteMetadataProvider<Series, Serie
         try
         {
             meta = await stremio
-                .GetMetaAsync(info.ProviderIds, StremioMediaType.Series)
+                .GetMetaAsync(info.ProviderIds, StremioMediaType.Series, nativeFirst: _manager.IsSplitPart(info.ProviderIds))
                 .ConfigureAwait(false);
         }
         catch (Exception ex)
@@ -175,6 +176,7 @@ public sealed class GelatoSeriesProvider : IRemoteMetadataProvider<Series, Serie
             return result;
 
         series.ProviderIds.Remove("Stremio");
+        KeepTvdbId(series, meta);
         series.KeepEndDateOnlyForGelato(info.ProviderIds);
         result.HasMetadata = true;
         result.Item = series;
@@ -280,6 +282,20 @@ public sealed class GelatoSeriesProvider : IRemoteMetadataProvider<Series, Serie
             )
                 result.AddPerson(new PersonInfo { Name = name, Type = PersonKind.Writer });
         }
+    }
+
+    /// <summary>
+    /// Gives the refreshed series the TVDB id the add-on reports for the show (<c>_tvdbId</c>), so
+    /// a later season the anime mapping list names finds the show by it
+    /// (<see cref="GelatoManager.TryPlaceSplitSeasonAsync"/>). Only stored, and under
+    /// <see cref="SplitSeason.ShowTvdbKey"/>, not as the series' TVDB id: stages and later
+    /// seasons share it, and Jellyfin would list them as one show. An item is looked up by the
+    /// ids <see cref="GelatoManager.IntoBaseItem"/> gives, which leave it out.
+    /// </summary>
+    public static void KeepTvdbId(Series series, StremioMeta meta)
+    {
+        if (!string.IsNullOrWhiteSpace(meta.TvdbIdExtra))
+            series.ProviderIds.TryAdd(SplitSeason.ShowTvdbKey, meta.TvdbIdExtra);
     }
 
     private static RemoteSearchResult ToSearchResult(StremioMeta meta) =>

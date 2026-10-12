@@ -378,16 +378,64 @@ def sc_filedgrow(jf, addon, c):
 
 
 def sc_splitsafe(jf, addon, c):
-    """No parent: its own show. Parent already has the season: no copy, nothing moved."""
+    """No parent: its own show. Mapped to season 1: its own show, nothing moved."""
     addon.stage = os.path.join(FIXTURES, "splitsafe")
     import_all(jf)
-    c.eq("series", sorted(s["Name"] for s in jf.items("Series")), ["Orphan Season 2", "Partwise"])
+    c.eq("series", sorted(s["Name"] for s in jf.items("Series")), ["Orphan Season 2", "Partwise", "Partwise Part 2"])
     eps = jf.items("Episode")
     part = sorted((e.get("ParentIndexNumber"), e.get("IndexNumber"), e.get("Path", "").rsplit("/", 1)[-1])
                   for e in eps if e.get("SeriesName") == "Partwise")
     c.eq("Partwise keeps its own episodes", part,
          [(1, 1, "tt0000502:1:1"), (1, 2, "tt0000502:1:2"), (1, 3, "tt0000502:1:3")])
-    c.eq("episodes", len(eps), 5)
+    c.eq("episodes", len(eps), 7)
+    repeat_check(jf, c)
+
+
+def season_files(jf, series, season):
+    return sorted((e.get("IndexNumber"), e.get("Path", "").rsplit("/", 1)[-1]) for e in jf.items("Episode")
+                  if e.get("SeriesName") == series and e.get("ParentIndexNumber") == season)
+
+
+def sc_splitfill(jf, addon, c):
+    """The show keeps its own season 2; the entry only fills the numbers it lacks, or is left out.
+    Then the show lists a new season 2 episode, and two cours of season 3 come in, the second
+    numbered on from the first: the season 2 that mixes the show's own and a filed episode takes
+    the new one, and both cours are filed."""
+    addon.stage = os.path.join(FIXTURES, "splitfill", "stage1")
+    import_all(jf)
+    c.eq("series (no duplicate season shows)", sorted(s["Name"] for s in jf.items("Series")), ["Fill Show", "Kept Show"])
+    c.eq("Fill Show season 2: own 1-2, the entry's 3", season_files(jf, "Fill Show", 2),
+         [(1, "tt0000810:2:1"), (2, "tt0000810:2:2"), (3, "mal:80011:3")])
+    c.eq("Kept Show season 2: its own only", season_files(jf, "Kept Show", 2),
+         [(1, "tt0000820:2:1"), (2, "tt0000820:2:2")])
+    c.true("left out logged", any("Kept Show Season 2 (mal:80021) left out" in l for l in jf.all_log()))
+    c.eq("episodes", len(jf.items("Episode")), 7)
+    # The stage goes live before the restart: the restart clears the meta cache and the
+    # startup sync refetches, so the new copy must already be served by the time it runs.
+    addon.stage = os.path.join(FIXTURES, "splitfill", "stage2")
+    jf.restart(); jf.login()
+    import_all(jf)
+    c.eq("series after stage 2", sorted(s["Name"] for s in jf.items("Series")), ["Fill Show", "Kept Show"])
+    c.eq("Fill Show season 2 gets the show's new 4", season_files(jf, "Fill Show", 2),
+         [(1, "tt0000810:2:1"), (2, "tt0000810:2:2"), (3, "mal:80011:3"), (4, "tt0000810:2:4")])
+    c.eq("Fill Show season 3: the first cour, then the second filed after it", season_files(jf, "Fill Show", 3),
+         [(1, "mal:80012:1"), (2, "mal:80012:2"), (3, "mal:80013:3"), (4, "mal:80013:4")])
+    c.eq("Kept Show season 2 after stage 2", season_files(jf, "Kept Show", 2),
+         [(1, "tt0000820:2:1"), (2, "tt0000820:2:2")])
+    c.eq("episodes after stage 2", len(jf.items("Episode")), 12)
+    repeat_check(jf, c)
+
+
+def sc_splitcours(jf, addon, c):
+    """Two cours of one season, listed second part first: the first is filed, the second is its own show."""
+    addon.stage = os.path.join(FIXTURES, "splitcours")
+    import_all(jf)
+    c.eq("series", sorted(s["Name"] for s in jf.items("Series")), ["Cour Show", "Cour Show Season 2 Part 2"])
+    c.eq("Cour Show season 2 is the first cour", season_files(jf, "Cour Show", 2),
+         [(1, "mal:80031:1"), (2, "mal:80031:2")])
+    c.eq("the second cour keeps its episodes", season_files(jf, "Cour Show Season 2 Part 2", 1),
+         [(1, "mal:80032:1"), (2, "mal:80032:2")])
+    c.eq("episodes", len(jf.items("Episode")), 6)
     repeat_check(jf, c)
 
 
@@ -587,6 +635,50 @@ def sc_cinemeta(jf, addon, c):
     repeat_check(jf, c)
 
 
+def sc_imdbclaim(jf, addon, c):
+    """An OVA with the IMDb id of a show known by that id only doesn't take it; season 1 does."""
+    addon.stage = os.path.join(FIXTURES, "cinemeta", "stage1")
+    import_all(jf)
+    first = jf.items("Series")
+    addon.stage = os.path.join(FIXTURES, "imdbclaim")
+    import_all(jf)
+    c.eq("series after the OVA", sorted(s["Name"] for s in jf.items("Series")), ["Cine Show", "Cine Show OVA"])
+    c.eq("Cine Show not taken by the OVA", {k.lower(): v for k, v in ids_of(jf, "Cine Show").items()}.get("kitsu"), None)
+    jf.restart(); jf.login()
+    addon.stage = os.path.join(FIXTURES, "cinemeta", "stage2")
+    import_all(jf)
+    series = jf.items("Series")
+    c.eq("series after season 1", sorted(s["Name"] for s in series), ["Cine Show", "Cine Show OVA"])
+    c.eq("season 1 found the show", [s["Id"] for s in series if s["Name"] == "Cine Show"], [s["Id"] for s in first])
+    c.eq("native id stored", {k.lower(): v for k, v in ids_of(jf, "Cine Show").items()}.get("kitsu"), "601")
+    c.eq("episodes", len(jf.items("Episode")), 4)
+    repeat_check(jf, c)
+
+
+def sc_imdbshared(jf, addon, c):
+    """The IMDb-only show and the OVA that shares its IMDb id keep their own episodes."""
+    addon.stage = os.path.join(FIXTURES, "cinemeta", "stage1")
+    import_all(jf)
+    addon.stage = os.path.join(FIXTURES, "imdbclaim")
+    import_all(jf)
+    jf.restart(); jf.login()
+    addon.stage = os.path.join(FIXTURES, "cinemeta", "stage1")
+    import_all(jf)
+
+    def files():
+        return sorted((e.get("SeriesName"), e.get("Path", "").rsplit("/", 1)[-1]) for e in jf.items("Episode"))
+    want = [("Cine Show", "tt0000601:1:1"), ("Cine Show", "tt0000601:1:2"), ("Cine Show", "tt0000601:1:3"),
+            ("Cine Show OVA", "kitsu:603:1")]
+    c.eq("series", sorted(s["Name"] for s in jf.items("Series")), ["Cine Show", "Cine Show OVA"])
+    # The IMDb-only import finds the show, never the OVA (see CatalogIdentity.PickForIdsOnly).
+    c.eq("Cine Show still without a native id", {k.lower(): v for k, v in ids_of(jf, "Cine Show").items()}.get("kitsu"), None)
+    c.eq("OVA keeps its native id", {k.lower(): v for k, v in ids_of(jf, "Cine Show OVA").items()}.get("kitsu"), "603")
+    c.eq("episodes after the IMDb-only import", files(), want)
+    jf.task("SyncSeriesTrees")
+    c.eq("episodes after a tree sync", files(), want)
+    repeat_check(jf, c)
+
+
 def sc_rekeyguard(jf, addon, c):
     """An IMDb id another show already has is not taken over."""
     addon.stage = os.path.join(FIXTURES, "rekeyguard", "stage1")
@@ -658,8 +750,12 @@ SCENARIOS = {
     "unaired": sc_unaired,
     "search": sc_search,
     "cinemeta": sc_cinemeta,
+    "imdbclaim": sc_imdbclaim,
+    "imdbshared": sc_imdbshared,
     "rekeyguard": sc_rekeyguard,
     "splitsafe": sc_splitsafe,
+    "splitfill": sc_splitfill,
+    "splitcours": sc_splitcours,
     "filedgrow": sc_filedgrow,
     "apikey": sc_apikey,
     "dupreport": sc_dupreport,

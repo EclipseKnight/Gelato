@@ -22,6 +22,57 @@ public static class AnimeSeasonMapStore
     private static string? _url;
     private static DateTime _loaded;
 
+    /// <summary>
+    /// The list as loaded, else the saved copy from that URL, without downloading anything
+    /// (for lookups that can't wait on a download). Null when there is neither, and while
+    /// GetAsync holds the lock to load the list.
+    /// </summary>
+    public static AnimeSeasonMap? Peek(string? url, string folder)
+    {
+        if (string.IsNullOrWhiteSpace(url))
+            return null;
+        if (_map is { } map && _url == url)
+            return map;
+        if (!Gate.Wait(0))
+            return null;
+        try
+        {
+            if (_map is { } loaded && _url == url)
+                return loaded;
+            var file = Path.Combine(folder, "anime-list-full.json");
+            var urlFile = file + ".url";
+            if (!File.Exists(file) || !File.Exists(urlFile) || File.ReadAllText(urlFile).Trim() != url)
+                return null;
+            using var stream = File.OpenRead(file);
+            var parsed = AnimeSeasonMap.Parse(stream);
+            // Dated by the file, so GetAsync still refreshes it once it is a day old.
+            _loaded = File.GetLastWriteTimeUtc(file);
+            _url = url;
+            _map = parsed;
+            return parsed;
+        }
+        finally
+        {
+            Gate.Release();
+        }
+    }
+
+    /// <summary>Forgets the loaded list (tests).</summary>
+    public static void Reset()
+    {
+        Gate.Wait();
+        try
+        {
+            _map = null;
+            _url = null;
+            _loaded = default;
+        }
+        finally
+        {
+            Gate.Release();
+        }
+    }
+
     public static async Task<AnimeSeasonMap?> GetAsync(string? url, string folder, ILogger log, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(url))

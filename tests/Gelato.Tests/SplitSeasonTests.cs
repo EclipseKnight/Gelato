@@ -57,35 +57,137 @@ public class SplitSeasonTests
 
     private static readonly AnimeSeasonMap.Link S2 = new(331753, 2);
 
+    private static int[] Eps(int from, int to) => Enumerable.Range(from, to - from + 1).ToArray();
+
     [Fact]
     public void Files_a_new_season_into_the_one_parent() =>
-        Assert.Equal(SplitSeason.Decision.File, SplitSeason.Decide(S2, 1, [1], 0, 0));
+        // Also the case on a later run: what the entry filed itself is neither the parent's own
+        // nor another entry's.
+        Assert.Equal(SplitSeason.Decision.File, SplitSeason.Decide(S2, 1, [1], Eps(1, 12), [], []));
 
     [Fact]
-    public void Files_again_when_the_season_only_holds_what_the_entry_filed() =>
-        Assert.Equal(SplitSeason.Decision.File, SplitSeason.Decide(S2, 1, [1], 12, 12));
+    public void Airing_season_the_parent_has_part_of_gets_only_the_missing_episodes()
+    {
+        // The parent has 10 of 12 from its own catalogue: no duplicate show, 11 and 12 filled.
+        Assert.Equal(SplitSeason.Decision.File, SplitSeason.Decide(S2, 1, [1], Eps(1, 12), Eps(1, 10), []));
+        Assert.Equal([11, 12], SplitSeason.ToFile(Eps(1, 12), Eps(1, 10)).Order());
+    }
+
+    [Theory]
+    [InlineData(13, 13)]
+    [InlineData(24, 12)]
+    [InlineData(12, 12)]
+    public void Parent_with_every_episode_number_of_the_entry_keeps_its_season_and_the_entry_is_left_out(
+        int parentOwn,
+        int entryEpisodes
+    ) =>
+        Assert.Equal(
+            SplitSeason.Decision.ParentHasSeason,
+            SplitSeason.Decide(S2, 1, [1], Eps(1, entryEpisodes), Eps(1, parentOwn), [])
+        );
+
+    [Theory]
+    [InlineData(12)]
+    [InlineData(13)]
+    public void A_second_cour_clashing_with_one_already_filed_is_its_own_show_whatever_its_length(int entryEpisodes) =>
+        Assert.Equal(
+            SplitSeason.Decision.OwnShow,
+            SplitSeason.Decide(S2, 1, [1], Eps(1, entryEpisodes), [], Eps(1, 12))
+        );
 
     [Fact]
-    public void Parent_with_its_own_episodes_in_that_season_gets_nothing_moved() =>
-        Assert.Equal(SplitSeason.Decision.ParentHasSeason, SplitSeason.Decide(S2, 1, [1], 13, 0));
+    public void A_second_cour_numbered_on_from_the_first_is_filed_after_it() =>
+        Assert.Equal(SplitSeason.Decision.File, SplitSeason.Decide(S2, 1, [1], Eps(13, 24), [], Eps(1, 12)));
+
+    [Fact]
+    public void Season_one_is_the_show_itself_and_never_filed() =>
+        Assert.Equal(SplitSeason.Decision.OwnShow, SplitSeason.Decide(new(331753, 1), 1, [1], Eps(1, 12), [], []));
+
+    [Fact]
+    public void Deferred_entries_are_placed_in_id_order_whatever_order_they_came_in()
+    {
+        static StremioMeta M(string id) => new() { Id = id };
+        string[] expected = ["mal:9", "mal:10", "mal:61967", "kitsu:50024"];
+        Assert.Equal(expected, SplitSeason.FilingOrder([M("kitsu:50024"), M("mal:61967"), M("mal:10"), M("mal:9")]).Select(m => m.Id));
+        Assert.Equal(expected, SplitSeason.FilingOrder([M("mal:10"), M("mal:9"), M("kitsu:50024"), M("mal:61967")]).Select(m => m.Id));
+    }
+
+    [Theory]
+    [InlineData("mal:61967", false)] // a later season kept as its own show
+    [InlineData("mal:33950", false)] // an OVA kept as its own show
+    [InlineData("mal:3", true)] // season 1: the show itself
+    [InlineData("tt7441658", true)] // a show known by its IMDb id only
+    [InlineData(null, true)]
+    public void A_part_kept_as_its_own_show_is_never_the_parent(string? id, bool parent) =>
+        Assert.Equal(parent, SplitSeason.CanBeParent(Map(), Ids(id)));
+
+    private static Dictionary<string, string> Ids(string? stremio) =>
+        stremio is null ? [] : new() { ["Stremio"] = stremio };
+
+    [Fact]
+    public void A_part_kept_as_its_own_show_with_the_shows_imdb_id_is_never_the_parent()
+    {
+        // The OVA's Stremio id is the show's IMDb id; its native id says what it is.
+        var ova = new Dictionary<string, string> { ["Stremio"] = "tt7441658", ["Imdb"] = "tt7441658", ["Mal"] = "33950" };
+        Assert.False(SplitSeason.CanBeParent(Map(), ova));
+        var show = new Dictionary<string, string> { ["Stremio"] = "tt7441658", ["Imdb"] = "tt7441658", ["Mal"] = "3" };
+        Assert.True(SplitSeason.CanBeParent(Map(), show));
+        // With the OVA no longer a candidate, the later season has one parent and is filed.
+        var parents = new[] { show, ova }.Count(s => SplitSeason.CanBeParent(Map(), s));
+        Assert.Equal(SplitSeason.Decision.File, SplitSeason.Decide(Map().Find("mal:61967"), parents, [1], Eps(1, 12), [], []));
+    }
+
+    [Fact]
+    public void An_imdb_only_lookup_finds_the_show_not_a_part_sharing_its_imdb_id_whatever_the_order()
+    {
+        var ova = new Dictionary<string, string> { ["Stremio"] = "tt7441658", ["Imdb"] = "tt7441658", ["Mal"] = "33950" };
+        var show = new Dictionary<string, string> { ["Stremio"] = "tt7441658", ["Imdb"] = "tt7441658" };
+        Assert.Same(show, CatalogIdentity.PickForIdsOnly([ova, show], x => x, Map()));
+        Assert.Same(show, CatalogIdentity.PickForIdsOnly([show, ova], x => x, Map()));
+        // Without the list (still downloading after a restart): the one without a native id.
+        Assert.Same(show, CatalogIdentity.PickForIdsOnly([ova, show], x => x, null));
+        // A show that took a native id itself still wins over the part.
+        var claimed = new Dictionary<string, string> { ["Imdb"] = "tt7441658", ["Mal"] = "3" };
+        Assert.Same(claimed, CatalogIdentity.PickForIdsOnly([ova, claimed], x => x, Map()));
+    }
+
+    [Fact]
+    public void A_second_season_one_entry_is_never_the_parent()
+    {
+        var map = AnimeSeasonMap.Parse(
+            new MemoryStream(
+                Encoding.UTF8.GetBytes(
+                    """
+                    [
+                      { "mal_id": 10, "tvdb_id": 7, "season": { "tvdb": 1 } },
+                      { "mal_id": 11, "tvdb_id": 7, "season": { "tvdb": 1 } }
+                    ]
+                    """
+                )
+            )
+        );
+        Assert.True(SplitSeason.CanBeParent(map, Ids("mal:10")));
+        Assert.False(SplitSeason.CanBeParent(map, Ids("mal:11")));
+        Assert.False(SplitSeason.CanBeParent(map, new Dictionary<string, string> { ["Stremio"] = "tt1", ["Mal"] = "11" }));
+    }
 
     [Theory]
     [InlineData(0)]
     [InlineData(2)]
     public void Needs_exactly_one_parent(int parents) =>
-        Assert.Equal(SplitSeason.Decision.OwnShow, SplitSeason.Decide(S2, parents, [1], 0, 0));
+        Assert.Equal(SplitSeason.Decision.OwnShow, SplitSeason.Decide(S2, parents, [1], Eps(1, 12), [], []));
 
     [Fact]
     public void No_mapping_or_specials_link_is_its_own_show()
     {
-        Assert.Equal(SplitSeason.Decision.OwnShow, SplitSeason.Decide(null, 1, [1], 0, 0));
-        Assert.Equal(SplitSeason.Decision.OwnShow, SplitSeason.Decide(new(331753, 0), 1, [1], 0, 0));
+        Assert.Equal(SplitSeason.Decision.OwnShow, SplitSeason.Decide(null, 1, [1], Eps(1, 12), [], []));
+        Assert.Equal(SplitSeason.Decision.OwnShow, SplitSeason.Decide(new(331753, 0), 1, [1], Eps(1, 12), [], []));
     }
 
     [Fact]
     public void Entry_with_several_seasons_or_none_is_its_own_show()
     {
-        Assert.Equal(SplitSeason.Decision.OwnShow, SplitSeason.Decide(S2, 1, [1, 2], 0, 0));
-        Assert.Equal(SplitSeason.Decision.OwnShow, SplitSeason.Decide(S2, 1, [], 0, 0));
+        Assert.Equal(SplitSeason.Decision.OwnShow, SplitSeason.Decide(S2, 1, [1, 2], Eps(1, 12), [], []));
+        Assert.Equal(SplitSeason.Decision.OwnShow, SplitSeason.Decide(S2, 1, [], Eps(1, 12), [], []));
     }
 }

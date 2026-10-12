@@ -37,14 +37,27 @@ changelog: >
   new seasons.
   An episode that hasn't aired yet gets no stream lookup. A search with an API key and no user
   id is answered instead of failing.
-  An anime catalogue entry that the anime id mapping list (FileSplitSeasons, AnimeMappingUrl)
-  names as a season of a show in the library is filed as that season of the show instead of
-  becoming a show of its own; episodes the show has already are never moved or renumbered.
-  A catalogue item with a native id that is already in the library by its IMDb id only (added
-  from a catalogue without native ids, like Cinemeta) is matched and takes the native id
-  instead of being added again. An IMDb id change is not applied when another item already has
-  that id. Episodes due within the next day get a stream lookup, and skipping an unaired one is
-  not remembered as no streams.
+  Split anime seasons (FileSplitSeasons, with the anime mapping list): an anime entry the list
+  names as season 2 or later of a show in your library is added to that show as the season.
+  New series may appear: an entry the list names as a later part of a show (a second cour, an
+  OVA, a "Part 2") is now imported as its own series when its episode numbers have no other
+  place to go.
+  A show's own episodes are never moved, renumbered or overwritten: a season entry only adds the
+  episode numbers the show is missing (such as the newest episodes of an airing season), and
+  adds nothing when none are missing.
+  A series keeps the TVDB id the add-on reports, so a season entry finds its show when the list
+  gives no IMDb id for it; it is kept apart from the series' own TVDB id, so stages and cours that
+  share it are not listed as one show. An entry the list names as a part of a show (an OVA, a
+  later season) gets its own metadata, not the show's whose IMDb id it carries, and is listed as
+  a show of its own with its own watch state.
+  A show already in the library from a catalogue without anime ids (like Cinemeta) is matched
+  instead of being added again, and two entries imported at the same time can't both take it.
+  An item that has several anime ids is not added again when found by any of them. A Cinemeta
+  entry that matches both a show and its OVA (kept as its own series) picks the show.
+  With FileSplitSeasons off, or for an entry the list doesn't have, shows are matched as before.
+  An IMDb id change is not applied when another item already has that id.
+  Episodes due within the next day get a stream lookup, and skipping an unaired one is not
+  remembered as no streams.
   A read-only "Possible duplicates report" task (weekly; GET /gelato/duplicates) lists items
   with the same native id, series that list episodes all owned by another series (the same
   show), items with no native id that share both TVDB and TMDB ids but not the IMDb id (an IMDb
@@ -60,7 +73,8 @@ changelog: >
   removed, on insert and in the Repair watch state task. Jellyfin 12.1 reattaches all or nothing,
   so one collision used to leave every parked row behind.
   A season filed from a split anime entry is not added again when the show's own data later
-  lists that season under other episode numbers; the filed episodes stay the season.
+  lists that season under other episode numbers; the filed episodes stay the season. A season
+  that has the show's own episodes next to filed ones still gets the show's new episodes.
   The weekly pass counts as done only when most series synced (an add-on outage no longer puts
   the recheck off a week), and its time is kept in data/gelato/last-full-series-sync.txt instead
   of rewriting the plugin configuration.

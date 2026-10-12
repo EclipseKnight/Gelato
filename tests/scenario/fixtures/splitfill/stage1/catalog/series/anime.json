@@ -1,0 +1,36 @@
+{
+ "metas": [
+  {
+   "id": "tt0000810",
+   "type": "series",
+   "name": "Fill Show",
+   "releaseInfo": "2020-",
+   "status": "Continuing",
+   "_tvdbId": "900810"
+  },
+  {
+   "id": "mal:80011",
+   "type": "series",
+   "name": "Fill Show Season 2",
+   "releaseInfo": "2021-",
+   "status": "Continuing",
+   "_tvdbId": "900810"
+  },
+  {
+   "id": "tt0000820",
+   "type": "series",
+   "name": "Kept Show",
+   "releaseInfo": "2020-2021",
+   "status": "Ended",
+   "_tvdbId": "900820"
+  },
+  {
+   "id": "mal:80021",
+   "type": "series",
+   "name": "Kept Show Season 2",
+   "releaseInfo": "2021-2021",
+   "status": "Ended",
+   "_tvdbId": "900820"
+  }
+ ]
+}

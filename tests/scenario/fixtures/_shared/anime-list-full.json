@@ -30,5 +30,75 @@
   "imdb_id": [
    "tt0000502"
   ]
+ },
+ {
+  "type": "TV",
+  "kitsu_id": 601,
+  "tvdb_id": 900601,
+  "season": {
+   "tvdb": 1
+  },
+  "imdb_id": [
+   "tt0000601"
+  ]
+ },
+ {
+  "type": "OVA",
+  "kitsu_id": 603,
+  "tvdb_id": 900601,
+  "season": {
+   "tvdb": 0
+  },
+  "imdb_id": [
+   "tt0000601"
+  ]
+ },
+ {
+  "type": "TV",
+  "mal_id": 80011,
+  "tvdb_id": 900810,
+  "season": {
+   "tvdb": 2
+  }
+ },
+ {
+  "type": "TV",
+  "mal_id": 80012,
+  "tvdb_id": 900810,
+  "season": {
+   "tvdb": 3
+  }
+ },
+ {
+  "type": "TV",
+  "mal_id": 80013,
+  "tvdb_id": 900810,
+  "season": {
+   "tvdb": 3
+  }
+ },
+ {
+  "type": "TV",
+  "mal_id": 80021,
+  "tvdb_id": 900820,
+  "season": {
+   "tvdb": 2
+  }
+ },
+ {
+  "type": "TV",
+  "mal_id": 80031,
+  "tvdb_id": 900830,
+  "season": {
+   "tvdb": 2
+  }
+ },
+ {
+  "type": "TV",
+  "mal_id": 80032,
+  "tvdb_id": 900830,
+  "season": {
+   "tvdb": 2
+  }
  }
 ]

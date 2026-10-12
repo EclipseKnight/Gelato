@@ -62,13 +62,66 @@ public static class CatalogIdentity
 
     /// <summary>
     /// Whether an item found by the IMDb id alone (after the native id found nothing) is the same
-    /// title: it has no native id yet (added from a catalogue without one, e.g. Cinemeta), or
-    /// the same one. An item with another native id is another title that shares the IMDb id.
+    /// title: it has the same native id, or none yet (added from a catalogue without one, e.g.
+    /// Cinemeta). An item with another native id is another title that shares the IMDb id.
     /// </summary>
-    public static bool ImdbMatchIsSame(IReadOnlyDictionary<string, string> candidate, KeyValuePair<string, string> native) =>
-        NativeId(candidate) is not { } other
-        || (string.Equals(other.Key, native.Key, StringComparison.OrdinalIgnoreCase)
-            && string.Equals(other.Value, native.Value, StringComparison.OrdinalIgnoreCase));
+    /// <remarks>
+    /// Anime catalogues give later seasons, OVAs and second cours the IMDb id of the whole show,
+    /// so a series with no native id yet is not taken by an entry the anime mapping list names
+    /// as one of those (see <see cref="AnimeSeasonMap.IsSplitEntry"/>); otherwise the first one
+    /// seen would take the show over. Without the list (<paramref name="map"/> null) and for ids
+    /// it doesn't have, the match is made as before.
+    /// </remarks>
+    public static bool ImdbMatchIsSame(
+        IReadOnlyDictionary<string, string> candidate,
+        KeyValuePair<string, string> native,
+        bool series,
+        AnimeSeasonMap? map
+    ) =>
+        Claim(candidate, native) switch
+        {
+            ClaimResult.Ours => true,
+            ClaimResult.Take => !series || map?.IsSplitEntry($"{native.Key.ToLowerInvariant()}:{native.Value}") != true,
+            _ => false,
+        };
+
+    /// <summary>
+    /// Of several items found for an entry without a native id (by its IMDb or other ids only),
+    /// the one it is. Anime catalogue parts kept as their own show (an OVA, a later season) carry
+    /// the show's IMDb id too: an item the mapping list names as such a part comes last, then
+    /// one with a native id, so the show added from a catalogue without native ids is found.
+    /// Ties keep the order given.
+    /// </summary>
+    public static T? PickForIdsOnly<T>(
+        IEnumerable<T> found,
+        Func<T, IReadOnlyDictionary<string, string>> ids,
+        AnimeSeasonMap? map
+    ) =>
+        found
+            .OrderBy(x => map is not null && !SplitSeason.CanBeParent(map, ids(x)) ? 1 : 0)
+            .ThenBy(x => NativeId(ids(x)) is null ? 0 : 1)
+            .FirstOrDefault();
+
+    public enum ClaimResult
+    {
+        /// <summary>No native id yet: the item takes this one.</summary>
+        Take,
+
+        /// <summary>The item has this native id already.</summary>
+        Ours,
+
+        /// <summary>Another entry took the item first: it is not this title.</summary>
+        Taken,
+    }
+
+    /// <summary>
+    /// What a found item's current provider ids say about taking this native id. Any of its
+    /// native ids counts: a metadata plugin may have added another one next to the first.
+    /// </summary>
+    public static ClaimResult Claim(IReadOnlyDictionary<string, string> current, KeyValuePair<string, string> native) =>
+        current.Any(kv => Same(kv.Key, native.Key) && Same(kv.Value, native.Value)) ? ClaimResult.Ours
+        : NativeId(current) is null ? ClaimResult.Take
+        : ClaimResult.Taken;
 
     public static bool IsAliasKey(string key) =>
         key.StartsWith(AliasKey, StringComparison.OrdinalIgnoreCase);
