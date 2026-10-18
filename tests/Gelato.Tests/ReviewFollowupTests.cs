@@ -8,6 +8,9 @@ using Xunit;
 
 namespace Gelato.Tests;
 
+// Both classes use the one process-wide mapping list store; run in parallel, a download in one
+// holds its lock while the other reads it.
+[Collection("Anime mapping list store")]
 public class ReviewFollowupTests
 {
     [Theory]

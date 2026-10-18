@@ -1,0 +1,28 @@
+{
+ "streams": [
+  {
+   "name": "Addon A",
+   "description": "Request timed out after 7000 ms",
+   "externalUrl": "https://example.invalid/help",
+   "streamData": {
+    "type": "error",
+    "error": {
+     "title": "Addon A",
+     "description": "Request timed out after 7000 ms"
+    }
+   }
+  },
+  {
+   "name": "Addon B",
+   "description": "Request timed out after 7000 ms",
+   "externalUrl": "https://example.invalid/help",
+   "streamData": {
+    "type": "error",
+    "error": {
+     "title": "Addon B",
+     "description": "Request timed out after 7000 ms"
+    }
+   }
+  }
+ ]
+}

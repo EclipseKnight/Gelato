@@ -81,6 +81,61 @@ public class StreamSyncCacheTests
     }
 
     [Fact]
+    public void A_failed_lookup_is_asked_again_after_a_minute_not_after_no_streams_ttl()
+    {
+        // Every addon timed out: the zero says nothing about the title.
+        _cache.Set("user:item", 0, lookupFailed: true);
+
+        // A burst of calls right after it doesn't ask again.
+        _clock.Advance(TimeSpan.FromSeconds(59));
+        Assert.Equal(StreamSyncState.NoStreams, _cache.Get("user:item", _itemId));
+
+        // A retry a minute later does, long before NoStreamsTTL.
+        _clock.Advance(TimeSpan.FromSeconds(2));
+        Assert.Equal(StreamSyncState.Due, _cache.Get("user:item", _itemId));
+    }
+
+    [Fact]
+    public void A_real_empty_answer_is_still_remembered_for_no_streams_ttl()
+    {
+        _cache.Set("user:item", 0, lookupFailed: false);
+
+        _clock.Advance(NoStreamsTtl - TimeSpan.FromSeconds(1));
+        Assert.Equal(StreamSyncState.NoStreams, _cache.Get("user:item", _itemId));
+    }
+
+    [Fact]
+    public void Streams_found_by_a_lookup_with_failures_keep_the_stream_ttl()
+    {
+        // Some addons failed, others answered: the streams found are real.
+        _cache.Set("user:item", 3, lookupFailed: true);
+
+        _clock.Advance(StreamTtl - TimeSpan.FromSeconds(1));
+        Assert.Equal(StreamSyncState.Synced, _cache.Get("user:item", _itemId));
+    }
+
+    [Fact]
+    public void A_failed_lookup_is_not_remembered_when_no_streams_is_turned_off()
+    {
+        _noStreamsTtl = TimeSpan.Zero;
+
+        _cache.Set("user:item", 0, lookupFailed: true);
+
+        Assert.Equal(StreamSyncState.Due, _cache.Get("user:item", _itemId));
+    }
+
+    [Fact]
+    public void A_failed_lookup_is_never_kept_longer_than_no_streams_ttl()
+    {
+        _noStreamsTtl = TimeSpan.FromSeconds(20);
+
+        _cache.Set("user:item", 0, lookupFailed: true);
+        _clock.Advance(TimeSpan.FromSeconds(21));
+
+        Assert.Equal(StreamSyncState.Due, _cache.Get("user:item", _itemId));
+    }
+
+    [Fact]
     public void Marks_are_per_key()
     {
         _cache.Set("userA:item", 0);

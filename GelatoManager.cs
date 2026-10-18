@@ -72,9 +72,11 @@ public sealed class GelatoManager(
 
     /// <summary>
     /// Marks the streams behind the key as synced: for StreamTTL when some were found, for
-    /// NoStreamsTTL when none were (see <see cref="StreamSyncCache"/>).
+    /// NoStreamsTTL when none were, and for a minute when none were because the lookup failed
+    /// (see <see cref="StreamSyncCache"/>).
     /// </summary>
-    public void SetStreamSync(string guid, int streamCount) => _streamSyncs.Set(guid, streamCount);
+    public void SetStreamSync(string guid, StreamSyncResult result) =>
+        _streamSyncs.Set(guid, result.Count, result.LookupFailed);
 
     /// <summary>
     /// Whether the streams behind the key were synced recently, and whether that sync found any.
@@ -1112,22 +1114,32 @@ public sealed class GelatoManager(
     /// <returns></returns>
     /// <summary>What <see cref="SyncStreams"/> returns for an episode that has not aired: no
     /// lookup was made, so nothing is to be remembered.</summary>
-    public const int NotAiredYet = -1;
+    public static readonly StreamSyncResult NotAiredYet = new(-1);
 
-    public async Task<int> SyncStreams(BaseItem item, Guid userId, CancellationToken ct)
+    private static readonly StreamSyncResult NoLookup = new(0);
+
+    public async Task<StreamSyncResult> SyncStreams(
+        BaseItem item,
+        Guid userId,
+        CancellationToken ct
+    )
     {
-        var count = 0;
+        var result = NoLookup;
         await RunExclusiveAsync(
                 item.Id,
                 async token =>
-                    count = await SyncStreamsCore(item, userId, token).ConfigureAwait(false),
+                    result = await SyncStreamsCore(item, userId, token).ConfigureAwait(false),
                 ct
             )
             .ConfigureAwait(false);
-        return count;
+        return result;
     }
 
-    private async Task<int> SyncStreamsCore(BaseItem item, Guid userId, CancellationToken ct)
+    private async Task<StreamSyncResult> SyncStreamsCore(
+        BaseItem item,
+        Guid userId,
+        CancellationToken ct
+    )
     {
         _log.LogDebug($"SyncStreams for {item.Id}");
         var stopwatch = Stopwatch.StartNew();
@@ -1137,20 +1149,20 @@ public sealed class GelatoManager(
                 "SyncStreams: item is not a Video type, itemType={ItemType}",
                 item.GetType().Name
             );
-            return 0;
+            return NoLookup;
         }
 
         if (video.IsStream())
         {
             _log.LogWarning("SyncStreams: item is a stream, skipping");
-            return 0;
+            return NoLookup;
         }
 
         // A version merged into another item: the streams belong to that item.
         if (video.PrimaryVersionId is not null)
         {
             _log.LogDebug("SyncStreams: {Id} is a version of another item, skipping", video.Id);
-            return 0;
+            return NoLookup;
         }
 
         if (video is Episode && AirDate.NotYetAired(video.PremiereDate, DateTime.UtcNow))
@@ -1170,14 +1182,14 @@ public sealed class GelatoManager(
         if (parent is null)
         {
             _log.LogWarning("SyncStreams: no parent, skipping");
-            return 0;
+            return NoLookup;
         }
 
         var uri = StremioUri.FromBaseItem(video);
         if (uri is null)
         {
             _log.LogError($"Unable to build Stremio URI for {video.Name}");
-            return 0;
+            return NoLookup;
         }
 
         var streamProviderIds = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -1192,12 +1204,21 @@ public sealed class GelatoManager(
         // Next to the addon's request: RemuxDB answers in well under a second, and gives up after
         // a few.
         var remuxDbLookup = remuxDb.LookupAsync(uri.ExternalId, ct);
+        var lookupClock = Stopwatch.StartNew();
         var streams = await stremio.GetStreamsAsync(uri).ConfigureAwait(false);
+        var lookupFailed = StreamSyncPolicy.LookupFailed(streams, lookupClock.Elapsed);
 
         // Filter valid streams
         var acceptable = streams
             .Select(s =>
             {
+                // Has no URL either, so it was never saved; it isn't a broken stream to warn about.
+                if (s.IsErrorEntry())
+                {
+                    _log.LogDebug("Addon error in the stream answer: {StreamName}", s.Name);
+                    return null;
+                }
+
                 if (!s.IsValid())
                 {
                     _log.LogWarning("Invalid stream, skipping {StreamName}", s.Name);
@@ -1484,15 +1505,16 @@ public sealed class GelatoManager(
         stopwatch.Stop();
 
         _log.LogInformation(
-            "SyncStreams finished GelatoId={GelatoId} userId={UserId} duration={Duration}s streams={Count} remuxdb={RemuxDb}",
+            "SyncStreams finished GelatoId={GelatoId} userId={UserId} duration={Duration}s streams={Count} remuxdb={RemuxDb} lookupFailed={LookupFailed}",
             uri.ExternalId,
             userId,
             Math.Round(stopwatch.Elapsed.TotalSeconds, 1).ToString(CultureInfo.InvariantCulture),
             acceptable.Count,
-            mediaInfo.Count
+            mediaInfo.Count,
+            lookupFailed
         );
 
-        return acceptable.Count;
+        return new StreamSyncResult(acceptable.Count, lookupFailed);
     }
 
     /// <summary>

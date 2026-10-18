@@ -33,6 +33,7 @@ class Addon:
     def __init__(self):
         self.stage = None
         self.delay = 0.0
+        self.delays = {}  # path prefix -> seconds, on top of delay
         self.requests = []
         addon = self
 
@@ -47,6 +48,9 @@ class Addon:
                     return self.send(400, b"{}")
                 if addon.delay and path.startswith("stream/"):
                     time.sleep(addon.delay)
+                for prefix, secs in list(addon.delays.items()):
+                    if path.startswith(prefix):
+                        time.sleep(secs)
                 # A "skip=N" page is past the end: catalogs here are one page.
                 if "/skip=" in path:
                     return self.send(200, b'{"metas":[]}')
@@ -500,6 +504,63 @@ def sc_streams(jf, addon, c):
         addon.delay = 0.0
 
 
+def sc_failedlookup(jf, addon, c):
+    """A lookup whose addons all failed is asked again a minute later; a real "none" is remembered."""
+    stage = os.path.join(jf.work, "failedlookup-stage")
+    shutil.copytree(os.path.join(FIXTURES, "failedlookup"), stage, dirs_exist_ok=True)
+    addon.stage = stage
+    errors_film, slow_film, empty_film = "tt0000901", "tt0000902", "tt0000903"
+    # Errors hidden: the answer is empty, only slow because the addons ran into their timeouts.
+    addon.delays[f"stream/movie/{slow_film}"] = 4.0
+    try:
+        import_all(jf)
+        films = {m["ProviderIds"].get("Stremio") or m["ProviderIds"].get("Imdb"): m for m in jf.items("Movie")}
+        c.eq("films imported", sorted(films), [errors_film, slow_film, empty_film])
+        if len(films) != 3:
+            return
+
+        def lookups(film):
+            return len([r for r in addon.requests if r.startswith(f"stream/movie/{film}")])
+
+        def play(film):
+            info = jf.call("POST", f"/Items/{films[film]['Id']}/PlaybackInfo?userId={jf.admin}", {})
+            # Paths are stubbed in the answer; a stream row's source is named after its stream.
+            return [ms.get("Name") or "" for ms in info.get("MediaSources") or []]
+
+        before = {f: lookups(f) for f in films}
+        for f in films:
+            play(f)
+        first = {f: lookups(f) - before[f] for f in films}
+        c.eq("lookups on the first Play", first, {f: 1 for f in films})
+        # A burst of calls right after doesn't ask again, failed or not.
+        for f in films:
+            play(f)
+        c.eq("lookups after a second Play at once", {f: lookups(f) - before[f] for f in films}, first)
+        c.true("addon errors logged as a failed lookup",
+               any(f'"{errors_film}"' in l and "lookupFailed=True" in l for l in jf.all_log()))
+        c.true("slow empty answer logged as a failed lookup",
+               any(f'"{slow_film}"' in l and "lookupFailed=True" in l for l in jf.all_log()))
+        c.true("quick empty answer logged as a real answer",
+               any(f'"{empty_film}"' in l and "streams=0" in l and "lookupFailed=False" in l for l in jf.all_log()))
+
+        # The addons are back: every film has a stream now.
+        for f in films:
+            shutil.copy(os.path.join(stage, "found.json"), os.path.join(stage, "stream", "movie", f"{f}.json"))
+        time.sleep(62)
+        sources = {f: play(f) for f in films}
+        c.eq("asked again a minute after a failed lookup",
+             {f: lookups(f) - before[f] for f in (errors_film, slow_film)}, {errors_film: 2, slow_film: 2})
+        for f in (errors_film, slow_film):
+            c.true(f"{f} plays the stream found the second time", "Found Stream" in sources[f])
+        c.eq("a real empty answer is still remembered", lookups(empty_film) - before[empty_film], 1)
+        c.true("the remembered film has no stream yet", "Found Stream" not in sources[empty_film])
+        if c.failures:
+            print("media sources:", json.dumps(sources)[:1500])
+        repeat_check(jf, c)
+    finally:
+        addon.delays.clear()
+
+
 def sc_reattach(jf, addon, c):
     """The item already has a newer row for a key that also waits on the placeholder."""
     addon.stage = os.path.join(FIXTURES, "reattach")
@@ -741,6 +802,7 @@ SCENARIOS = {
     "sharedtmdb": sc_sharedtmdb,
     "delete": sc_delete,
     "streams": sc_streams,
+    "failedlookup": sc_failedlookup,
     "onepiece": sc_onepiece,
     "sharedepisodes": sc_sharedepisodes,
     "comeback": sc_comeback,

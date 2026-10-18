@@ -4,6 +4,9 @@ using Xunit;
 
 namespace Gelato.Tests;
 
+// Both classes use the one process-wide mapping list store; run in parallel, a download in one
+// holds its lock while the other reads it.
+[Collection("Anime mapping list store")]
 public class IdentityHotfixTests
 {
     private static AnimeSeasonMap Map() =>
@@ -176,9 +179,9 @@ public class IdentityHotfixTests
     public async Task A_skipped_lookup_is_not_remembered()
     {
         var marked = false;
-        await StreamSyncPolicy.SyncAndMarkAsync(_ => Task.FromResult(-1), false, _ => marked = true, CancellationToken.None);
+        await StreamSyncPolicy.SyncAndMarkAsync(_ => Task.FromResult(GelatoManager.NotAiredYet), false, _ => marked = true, CancellationToken.None);
         Assert.False(marked);
-        await StreamSyncPolicy.SyncAndMarkAsync(_ => Task.FromResult(0), false, _ => marked = true, CancellationToken.None);
+        await StreamSyncPolicy.SyncAndMarkAsync(_ => Task.FromResult(new StreamSyncResult(0)), false, _ => marked = true, CancellationToken.None);
         Assert.True(marked);
     }
 }

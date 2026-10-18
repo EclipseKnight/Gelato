@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Gelato.Decorators;
 using Gelato.Services;
 using Xunit;
@@ -142,10 +143,10 @@ public class StreamRowWaitTests
 /// <summary>When a finished sync is marked (StreamTTL or NoStreamsTTL), and when it is not.</summary>
 public class SyncAndMarkTests
 {
-    private readonly List<int> _marks = [];
+    private readonly List<StreamSyncResult> _marks = [];
 
     private Task Run(
-        Func<CancellationToken, Task<int>> sync,
+        Func<CancellationToken, Task<StreamSyncResult>> sync,
         bool isMergedVersion = false,
         CancellationToken ct = default
     ) => StreamSyncPolicy.SyncAndMarkAsync(sync, isMergedVersion, _marks.Add, ct);
@@ -155,15 +156,22 @@ public class SyncAndMarkTests
     [InlineData(0)]
     public async Task A_sync_that_finishes_is_marked_with_its_count(int count)
     {
-        await Run(_ => Task.FromResult(count));
-        Assert.Equal([count], _marks);
+        await Run(_ => Task.FromResult(new StreamSyncResult(count)));
+        Assert.Equal([new StreamSyncResult(count)], _marks);
+    }
+
+    [Fact]
+    public async Task A_failed_lookup_is_marked_as_failed_not_just_as_zero()
+    {
+        await Run(_ => Task.FromResult(new StreamSyncResult(0, LookupFailed: true)));
+        Assert.Equal([new StreamSyncResult(0, LookupFailed: true)], _marks);
     }
 
     [Fact]
     public async Task A_merged_version_is_never_marked_as_zero()
     {
         // Its key is the movie it was merged into: a zero would hold back that movie's sync.
-        await Run(_ => Task.FromResult(0), isMergedVersion: true);
+        await Run(_ => Task.FromResult(new StreamSyncResult(0)), isMergedVersion: true);
         Assert.Empty(_marks);
     }
 
@@ -186,7 +194,7 @@ public class SyncAndMarkTests
                 {
                     await cts.CancelAsync();
                     token.ThrowIfCancellationRequested();
-                    return 3;
+                    return new StreamSyncResult(3);
                 },
                 ct: cts.Token
             )
@@ -237,5 +245,65 @@ public class StreamRowGoneTests
     public void A_movie_or_episode_is_never_affected()
     {
         Assert.False(AnswersAsMovie(isStreamRow: false));
+    }
+}
+
+/// <summary>
+/// When an empty stream answer can't be trusted as "this title has no streams": AIOStreams lists
+/// an addon's error, or the answer took as long as addons take to time out.
+/// </summary>
+public class FailedLookupTests
+{
+    private static readonly TimeSpan Fast = TimeSpan.FromSeconds(1);
+
+    private static StremioStream Stream(string url = "http://example.invalid/a.mkv") =>
+        new() { Name = "A", Url = url };
+
+    private static StremioStream ErrorEntry() =>
+        new()
+        {
+            Name = "Addon A",
+            Description = "Request timed out",
+            StreamData = JsonDocument.Parse("""{ "type": "error" }""").RootElement,
+        };
+
+    [Fact]
+    public void A_quick_empty_answer_is_a_real_answer()
+    {
+        Assert.False(StreamSyncPolicy.LookupFailed([], Fast));
+    }
+
+    [Fact]
+    public void An_addon_error_in_the_answer_is_a_failed_lookup()
+    {
+        Assert.True(StreamSyncPolicy.LookupFailed([ErrorEntry()], Fast));
+    }
+
+    [Fact]
+    public void A_slow_empty_answer_is_a_failed_lookup()
+    {
+        // With errors hidden, the answer is empty either way; only the time tells.
+        Assert.True(StreamSyncPolicy.LookupFailed([], StreamSyncPolicy.SlowLookup));
+    }
+
+    [Fact]
+    public void An_answer_just_under_the_slow_mark_is_a_real_answer()
+    {
+        Assert.False(
+            StreamSyncPolicy.LookupFailed([], StreamSyncPolicy.SlowLookup - TimeSpan.FromMilliseconds(1))
+        );
+    }
+
+    [Fact]
+    public void Other_stream_data_is_not_an_error()
+    {
+        var stats = new StremioStream
+        {
+            Name = "Summary",
+            StreamData = JsonDocument.Parse("""{ "type": "statistic" }""").RootElement,
+        };
+        Assert.False(stats.IsErrorEntry());
+        Assert.False(Stream().IsErrorEntry());
+        Assert.False(StreamSyncPolicy.LookupFailed([stats, Stream()], Fast));
     }
 }

@@ -1,5 +1,6 @@
 using System.Net;
 using System.Text.Json;
+using Gelato.Decorators;
 using Gelato.Tests.Fakes;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
@@ -105,6 +106,34 @@ public sealed class AddonScenarioTests : IDisposable
         var streams = await NewProvider()
             .GetStreamsAsync(new StremioUri(StremioMediaType.Movie, "tt0000002"));
         Assert.Empty(streams);
+    }
+
+    [Fact]
+    public async Task Addons_that_all_time_out_are_a_failed_lookup_not_streams()
+    {
+        // AIOStreams with errors shown: each addon that failed is an entry with no URL.
+        Use("streams");
+        var streams = await NewProvider()
+            .GetStreamsAsync(new StremioUri(StremioMediaType.Movie, "tt0000004"));
+
+        Assert.Equal(2, streams.Count);
+        Assert.All(streams, s => Assert.True(s.IsErrorEntry()));
+        Assert.All(streams, s => Assert.False(s.IsValid()));
+        Assert.True(StreamSyncPolicy.LookupFailed(streams, TimeSpan.FromSeconds(1)));
+    }
+
+    [Fact]
+    public async Task A_slow_empty_answer_is_a_failed_lookup()
+    {
+        // AIOStreams with errors hidden answers an empty list either way; the time tells.
+        Use("streams");
+        _addon.Delays["/stream/"] = StreamSyncPolicy.SlowLookup;
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        var streams = await NewProvider()
+            .GetStreamsAsync(new StremioUri(StremioMediaType.Movie, "tt0000002"));
+
+        Assert.Empty(streams);
+        Assert.True(StreamSyncPolicy.LookupFailed(streams, sw.Elapsed));
     }
 
     [Fact]

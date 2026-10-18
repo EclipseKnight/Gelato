@@ -11,9 +11,23 @@ public enum StreamSyncState
     /// <summary>Synced within <c>StreamTTL</c>, and streams were found.</summary>
     Synced,
 
-    /// <summary>The last sync, within <c>NoStreamsTTL</c>, found no streams.</summary>
+    /// <summary>
+    /// The last sync found no streams: within <c>NoStreamsTTL</c>, or within
+    /// <see cref="StreamSyncCache.FailedLookupTtl"/> when its lookup failed.
+    /// </summary>
     NoStreams,
 }
+
+/// <summary>What a finished stream sync found.</summary>
+/// <param name="Count">
+/// The streams found. Negative when no lookup was made (an episode that has not aired).
+/// </param>
+/// <param name="LookupFailed">
+/// The lookup can't be trusted to have found everything: an addon behind it failed or timed
+/// out (see <see cref="Gelato.Decorators.StreamSyncPolicy.LookupFailed"/>). Its zero is not
+/// "this title has no streams".
+/// </param>
+public readonly record struct StreamSyncResult(int Count, bool LookupFailed = false);
 
 /// <summary>
 /// The per-user marks that say a movie/episode's streams were synced recently, so the next call
@@ -24,6 +38,11 @@ public enum StreamSyncState
 /// streams asked AIOStreams on every call, and waited for its slowest addon each time: on one
 /// server over five days, a third of all syncs found nothing and most were repeated within the
 /// hour. The shorter time lets a title whose streams appear later be picked up soon.
+/// <para>
+/// A sync whose lookup failed (every addon timed out, say) also answers with no streams, but
+/// that says nothing about the title. It is remembered for <see cref="FailedLookupTtl"/> only,
+/// so Play works again a minute later instead of after <c>NoStreamsTTL</c>.
+/// </para>
 /// </remarks>
 public sealed class StreamSyncCache(
     IMemoryCache cache,
@@ -40,8 +59,19 @@ public sealed class StreamSyncCache(
 
     private sealed record Mark(long Sequence, bool NoStreams);
 
-    /// <summary>Records a finished sync that found <paramref name="streamCount"/> streams.</summary>
-    public void Set(string key, int streamCount)
+    /// <summary>
+    /// How long a sync that found nothing because its lookup failed is remembered. Fixed, not a
+    /// setting: long enough that a burst of calls (a details page, then Play, then the player's
+    /// own calls) doesn't ask again, short enough that a retry a minute later does. Never longer
+    /// than <c>NoStreamsTTL</c>, so 0 there turns this off too.
+    /// </summary>
+    public static readonly TimeSpan FailedLookupTtl = TimeSpan.FromSeconds(60);
+
+    /// <summary>
+    /// Records a finished sync that found <paramref name="streamCount"/> streams.
+    /// <paramref name="lookupFailed"/> only matters when it found none.
+    /// </summary>
+    public void Set(string key, int streamCount, bool lookupFailed = false)
     {
         var lifetime = streamTtl();
         if (streamCount == 0)
@@ -50,6 +80,8 @@ public sealed class StreamSyncCache(
             var noStreams = noStreamsTtl();
             if (noStreams <= TimeSpan.Zero)
                 return;
+            if (lookupFailed && FailedLookupTtl < noStreams)
+                noStreams = FailedLookupTtl;
             lifetime = noStreams < lifetime ? noStreams : lifetime;
         }
 

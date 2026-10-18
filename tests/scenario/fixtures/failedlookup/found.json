@@ -1,0 +1,9 @@
+{
+ "streams": [
+  {
+   "name": "Found Stream",
+   "title": "Found 1080p",
+   "url": "http://127.0.0.1:9/found.mkv"
+  }
+ ]
+}
