@@ -436,8 +436,9 @@ public sealed class MediaSourceManagerDecorator(
 
     /// <summary>
     /// Asks AIOStreams for the movie/episode's streams, saves them as its rows and marks the user's
-    /// sync (<see cref="GelatoManager.SetStreamSync"/>), also when none were found. A failed sync
-    /// is not marked, so the next call tries again.
+    /// sync (<see cref="GelatoManager.SetStreamSync"/>), also when none were found. A sync that
+    /// throws is not marked, so the next call tries again; one whose lookup failed is marked for a
+    /// minute only (<see cref="StreamSyncCache.FailedLookupTtl"/>).
     /// </summary>
     private async Task SyncStreamsAsync(
         GelatoManager manager,
@@ -470,7 +471,7 @@ public sealed class MediaSourceManagerDecorator(
                 .SyncAndMarkAsync(
                     token => manager.SyncStreams(item, userId, token),
                     isMergedVersion: item is Video { PrimaryVersionId: not null },
-                    count => manager.SetStreamSync(cacheKey, count),
+                    result => manager.SetStreamSync(cacheKey, result),
                     ct
                 )
                 .ConfigureAwait(false);

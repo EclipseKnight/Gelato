@@ -86,9 +86,31 @@ public static class StreamSyncPolicy
     ) => isStreamRow && !isItemRead && !rowExists && movieExists;
 
     /// <summary>
-    /// Runs a sync and marks it with the number of streams found, so the next calls within
-    /// StreamTTL (or NoStreamsTTL for none) answer without asking again. A sync that throws or is
-    /// cancelled is not marked, so the next call tries again; the exception is the caller's.
+    /// How long an empty stream answer may take and still count as a real "no streams". An addon
+    /// that times out holds the answer up for its whole timeout, and AIOStreams' starter config
+    /// hides the error, so the time is the only sign left. On one server over three days, every
+    /// empty answer that took 3.3 s or more had at least one addon fail behind it, and every one
+    /// that took 2.7 s or less had none. Calling a slow real answer failed costs one more lookup
+    /// a minute later; calling a failed one real fails Play for <c>NoStreamsTTL</c>.
+    /// </summary>
+    public static readonly TimeSpan SlowLookup = TimeSpan.FromSeconds(3);
+
+    /// <summary>
+    /// Whether a stream answer can't be trusted to list everything the title has: it lists an
+    /// addon's error (<see cref="StremioStream.IsErrorEntry"/>), or it took
+    /// <see cref="SlowLookup"/> or longer. Only an empty answer is affected by it: streams found
+    /// are kept as usual.
+    /// </summary>
+    /// <param name="answer">The streams the addon answered with, before any filtering.</param>
+    /// <param name="took">How long the addon took to answer.</param>
+    public static bool LookupFailed(IReadOnlyCollection<StremioStream> answer, TimeSpan took) =>
+        took >= SlowLookup || answer.Any(s => s.IsErrorEntry());
+
+    /// <summary>
+    /// Runs a sync and marks it with what it found, so the next calls within StreamTTL (or
+    /// NoStreamsTTL for none, or a minute when the lookup failed) answer without asking again. A
+    /// sync that throws or is cancelled is not marked, so the next call tries again; the exception
+    /// is the caller's.
     /// </summary>
     /// <param name="isMergedVersion">
     /// The item is a version merged into another movie/episode. Its streams belong to that one, so
@@ -96,19 +118,19 @@ public static class StreamSyncPolicy
     /// would hold back that movie's own sync.
     /// </param>
     public static async Task SyncAndMarkAsync(
-        Func<CancellationToken, Task<int>> sync,
+        Func<CancellationToken, Task<StreamSyncResult>> sync,
         bool isMergedVersion,
-        Action<int> mark,
+        Action<StreamSyncResult> mark,
         CancellationToken ct
     )
     {
-        var count = await sync(ct).ConfigureAwait(false);
+        var result = await sync(ct).ConfigureAwait(false);
         // Negative: no lookup was made (an episode that has not aired); nothing to remember.
-        if (count < 0)
+        if (result.Count < 0)
             return;
-        if (count > 0 || !isMergedVersion)
+        if (result.Count > 0 || !isMergedVersion)
         {
-            mark(count);
+            mark(result);
         }
     }
 }

@@ -16,7 +16,8 @@ public class PluginConfiguration : BasePluginConfiguration
     /// Seconds a sync that found no streams is remembered for that user and title, so calls in
     /// between answer at once instead of asking AIOStreams again (and waiting for its slowest
     /// addon). Kept short so streams that appear later are found soon. 0 turns it off; it is
-    /// never longer than <see cref="StreamTTL"/>.
+    /// never longer than <see cref="StreamTTL"/>. A sync that found nothing because its lookup
+    /// failed is remembered for a minute at most (<see cref="Services.StreamSyncCache.FailedLookupTtl"/>).
     /// </summary>
     public int NoStreamsTTL { get; set; } = 600;
 

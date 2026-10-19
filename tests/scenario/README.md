@@ -19,6 +19,7 @@ data folder). The run refuses to start if the port is in use.
 | `sharedtmdb` | Two films sharing a TMDB id stay two films |
 | `delete` | A deleted film comes back on the next import with the viewer's watch state; the other film's is untouched |
 | `streams` | A slow add-on (3 s) and a title with zero streams don't break an import |
+| `failedlookup` | Play on a film whose add-ons all failed (errors listed, or errors hidden and a slow empty answer) asks again a minute later and finds the streams; a film the add-on really has no streams for is remembered |
 | `onepiece` | An IMDb id change keeps one series, its episodes and watch state |
 | `sharedepisodes` | Two entries claiming the same episodes don't move them back and forth |
 | `comeback` | An Ended series that comes back gets its new season |

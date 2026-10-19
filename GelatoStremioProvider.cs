@@ -1560,6 +1560,17 @@ public class StremioStream
         return segment.Length <= 64;
     }
 
+    /// <summary>
+    /// An addon's error that AIOStreams lists among the streams (unless its config hides errors):
+    /// the addon failed or timed out. It names the addon and the error, has no URL to play, and
+    /// says nothing about the title's streams.
+    /// </summary>
+    public bool IsErrorEntry() =>
+        StreamData is { ValueKind: JsonValueKind.Object } data
+        && data.TryGetProperty("type", out var type)
+        && type.ValueKind == JsonValueKind.String
+        && type.GetString() == "error";
+
     public bool IsValid()
     {
         if (string.IsNullOrWhiteSpace(Url))

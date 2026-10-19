@@ -189,7 +189,8 @@
               <label class="inputLabel inputLabelUnfocused" for="txtNoStreamsTTL">No-streams TTL (seconds):</label>
               <input is="emby-input" type="number" id="txtNoStreamsTTL" class="emby-input" min="0" />
               <div class="fieldDescription">How long a title that returned no streams is remembered per user, so it
-                isn't asked for again on every visit. Never longer than Stream TTL. 0 turns it off. Default: 600.</div>
+                isn't asked for again on every visit. Never longer than Stream TTL. 0 turns it off. Default: 600.
+                A lookup that failed (addons timed out or answered with an error) is remembered for a minute at most.</div>
             </div>
 
             <div class="checkboxContainer checkboxContainer-withDescription">
