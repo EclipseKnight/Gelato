@@ -307,3 +307,45 @@ public class FailedLookupTests
         Assert.False(StreamSyncPolicy.LookupFailed([stats, Stream()], Fast));
     }
 }
+
+/// <summary>
+/// A sync removes the versions its answer left out only when the lookup didn't fail: an addon
+/// that timed out leaves its streams out although they still exist.
+/// </summary>
+public class UnlistedVersionsTests
+{
+    [Fact]
+    public void A_lookup_that_did_not_fail_removes_the_versions_it_left_out()
+    {
+        Assert.True(StreamSyncPolicy.RemovesUnlistedVersions(lookupFailed: false));
+    }
+
+    [Fact]
+    public void A_failed_lookup_keeps_the_versions_it_did_not_hear_back_about()
+    {
+        Assert.False(StreamSyncPolicy.RemovesUnlistedVersions(lookupFailed: true));
+    }
+
+    [Fact]
+    public void A_partial_answer_with_an_addon_error_counts_as_failed_and_keeps_them()
+    {
+        // One addon answered, the other timed out: what an outage at one store looked like.
+        var timedOut = new StremioStream
+        {
+            Name = "Addon B",
+            StreamData = JsonDocument
+                .Parse("""{ "type": "error", "error": { "title": "Addon B" } }""")
+                .RootElement,
+        };
+        var answer = new[]
+        {
+            new StremioStream { Name = "Stream A", Url = "http://example.invalid/a.mkv" },
+            timedOut,
+        };
+        Assert.False(
+            StreamSyncPolicy.RemovesUnlistedVersions(
+                StreamSyncPolicy.LookupFailed(answer, TimeSpan.FromMilliseconds(500))
+            )
+        );
+    }
+}

@@ -1437,12 +1437,14 @@ public sealed class GelatoManager(
         }
 
         var newIds = new HashSet<Guid>(upsertedStreams.Select(x => x.Id));
-        var stale = existingByGuid
+        var unlisted = existingByGuid
             .Values.Where(m =>
                 !newIds.Contains(m.Id)
                 && (m.GelatoData<List<Guid>>("userIds")?.Contains(userId) ?? false)
             )
             .ToList();
+        // A failed lookup's answer can lack streams that still exist: their versions stay.
+        var stale = StreamSyncPolicy.RemovesUnlistedVersions(lookupFailed) ? unlisted : [];
 
         foreach (var _item in stale)
         {
@@ -1505,13 +1507,14 @@ public sealed class GelatoManager(
         stopwatch.Stop();
 
         _log.LogInformation(
-            "SyncStreams finished GelatoId={GelatoId} userId={UserId} duration={Duration}s streams={Count} remuxdb={RemuxDb} lookupFailed={LookupFailed}",
+            "SyncStreams finished GelatoId={GelatoId} userId={UserId} duration={Duration}s streams={Count} remuxdb={RemuxDb} lookupFailed={LookupFailed} unlistedKept={UnlistedKept}",
             uri.ExternalId,
             userId,
             Math.Round(stopwatch.Elapsed.TotalSeconds, 1).ToString(CultureInfo.InvariantCulture),
             acceptable.Count,
             mediaInfo.Count,
-            lookupFailed
+            lookupFailed,
+            unlisted.Count - stale.Count
         );
 
         return new StreamSyncResult(acceptable.Count, lookupFailed);

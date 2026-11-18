@@ -98,13 +98,23 @@ public static class StreamSyncPolicy
     /// <summary>
     /// Whether a stream answer can't be trusted to list everything the title has: it lists an
     /// addon's error (<see cref="StremioStream.IsErrorEntry"/>), or it took
-    /// <see cref="SlowLookup"/> or longer. Only an empty answer is affected by it: streams found
-    /// are kept as usual.
+    /// <see cref="SlowLookup"/> or longer. An empty failed answer is remembered for a minute only
+    /// (<see cref="StreamSyncCache.FailedLookupTtl"/>), and the versions a failed answer didn't
+    /// list are kept (<see cref="RemovesUnlistedVersions"/>).
     /// </summary>
     /// <param name="answer">The streams the addon answered with, before any filtering.</param>
     /// <param name="took">How long the addon took to answer.</param>
     public static bool LookupFailed(IReadOnlyCollection<StremioStream> answer, TimeSpan took) =>
         took >= SlowLookup || answer.Any(s => s.IsErrorEntry());
+
+    /// <summary>
+    /// Whether a sync removes the user's versions its answer didn't list. Only after a lookup
+    /// that didn't fail (<see cref="LookupFailed"/>): when an addon times out, its streams are
+    /// missing from the answer although they still exist, and removing their versions left Play
+    /// with fewer versions, or with none in an outage, until the next lookup. They stay until a
+    /// lookup that didn't fail leaves them out.
+    /// </summary>
+    public static bool RemovesUnlistedVersions(bool lookupFailed) => !lookupFailed;
 
     /// <summary>
     /// Runs a sync and marks it with what it found, so the next calls within StreamTTL (or
