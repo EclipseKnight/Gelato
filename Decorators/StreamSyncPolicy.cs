@@ -91,16 +91,18 @@ public static class StreamSyncPolicy
     /// hides the error, so the time is the only sign left. On one server over three days, every
     /// empty answer that took 3.3 s or more had at least one addon fail behind it, and every one
     /// that took 2.7 s or less had none. Calling a slow real answer failed costs one more lookup
-    /// a minute later; calling a failed one real fails Play for <c>NoStreamsTTL</c>.
+    /// a minute later; calling a failed one real fails Play for <c>NoStreamsTTL</c>. The same mark
+    /// is applied to answers that list streams (<see cref="LookupFailed"/>), where it was not
+    /// measured: it only decides whether the versions the answer left out are kept.
     /// </summary>
     public static readonly TimeSpan SlowLookup = TimeSpan.FromSeconds(3);
 
     /// <summary>
     /// Whether a stream answer can't be trusted to list everything the title has: it lists an
     /// addon's error (<see cref="StremioStream.IsErrorEntry"/>), or it took
-    /// <see cref="SlowLookup"/> or longer. An empty failed answer is remembered for a minute only
-    /// (<see cref="StreamSyncCache.FailedLookupTtl"/>), and the versions a failed answer didn't
-    /// list are kept (<see cref="RemovesUnlistedVersions"/>).
+    /// <see cref="SlowLookup"/> or longer, whether or not it lists streams. An empty failed
+    /// answer is remembered for a minute only (<see cref="StreamSyncCache.FailedLookupTtl"/>), and
+    /// the versions a failed answer didn't list are kept (<see cref="RemovesUnlistedVersions"/>).
     /// </summary>
     /// <param name="answer">The streams the addon answered with, before any filtering.</param>
     /// <param name="took">How long the addon took to answer.</param>
@@ -112,7 +114,11 @@ public static class StreamSyncPolicy
     /// that didn't fail (<see cref="LookupFailed"/>): when an addon times out, its streams are
     /// missing from the answer although they still exist, and removing their versions left Play
     /// with fewer versions, or with none in an outage, until the next lookup. They stay until a
-    /// lookup that didn't fail leaves them out.
+    /// lookup that didn't fail leaves them out. This is deliberately as broad as
+    /// <see cref="LookupFailed"/>: an answer that lists streams but took <see cref="SlowLookup"/>
+    /// or longer keeps them too, because a slow answer may be partial when an addon timed out
+    /// and its error is hidden. The cost is that on a setup that is always that slow, a version
+    /// whose stream is really gone stays until a faster answer leaves it out.
     /// </summary>
     public static bool RemovesUnlistedVersions(bool lookupFailed) => !lookupFailed;
 

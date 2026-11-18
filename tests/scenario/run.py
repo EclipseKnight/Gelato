@@ -562,7 +562,7 @@ def sc_failedlookup(jf, addon, c):
 
 
 def sc_partiallookup(jf, addon, c):
-    """Versions a failed lookup didn't hear back about stay until a lookup that didn't fail."""
+    """Versions a failed lookup (an error entry, or an answer that took 3 s or more) left out stay until a lookup that didn't fail."""
     stage = os.path.join(jf.work, "partiallookup-stage")
     shutil.copytree(os.path.join(FIXTURES, "partiallookup"), stage, dirs_exist_ok=True)
     addon.stage = stage
@@ -598,8 +598,17 @@ def sc_partiallookup(jf, addon, c):
     c.eq("add-on B timed out: its version kept", play(), (1, ["Stream A", "Stream B"]))
     c.true("both logged as failed lookups",
            len([l for l in jf.all_log() if f'"{film}"' in l and "lookupFailed=True" in l]) == 2)
+    # The same answer without B, no error entries in it: served slowly (3 s or more) it may be
+    # partial because an add-on timed out, so B stays; served fast it is complete, so B goes.
     answer("a-only.json")
-    c.eq("a full answer without B: B's version goes", play(), (1, ["Stream A"]))
+    addon.delays[f"stream/movie/{film}"] = 4.0
+    try:
+        c.eq("a slow answer without B and without errors: B's version kept", play(), (1, ["Stream A", "Stream B"]))
+    finally:
+        addon.delays.clear()
+    c.true("the slow answer logged as a failed lookup",
+           len([l for l in jf.all_log() if f'"{film}"' in l and "lookupFailed=True" in l]) == 3)
+    c.eq("a fast full answer without B: B's version goes", play(), (1, ["Stream A"]))
     repeat_check(jf, c)
 
 

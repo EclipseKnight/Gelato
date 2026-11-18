@@ -23,6 +23,10 @@ changelog: >
   so Play finds the streams again a minute later.
   A failed lookup no longer removes the versions its answer left out (an addon that timed out
   leaves its streams out although they still exist): they stay until a lookup that didn't fail.
+  A lookup counts as failed when its answer lists an addon error or takes 3 s or more, whether
+  the answer is empty or not, because a slow answer may be partial. So a slow answer that lists
+  streams keeps the versions it doesn't list too, and they go on the next lookup that answers
+  faster.
   When StreamTTL has passed and the user still has the
   title's rows, details reads answer with them at once and the sync runs in the background
   (RefreshStreamsInBackground, default on); playback calls and pre-probes wait for a running

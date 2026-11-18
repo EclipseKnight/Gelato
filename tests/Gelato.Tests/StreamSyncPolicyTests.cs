@@ -327,6 +327,28 @@ public class UnlistedVersionsTests
     }
 
     [Fact]
+    public void A_slow_answer_that_lists_streams_keeps_them_and_a_fast_one_does_not()
+    {
+        var answer = new[]
+        {
+            new StremioStream { Name = "Stream A", Url = "http://example.invalid/a.mkv" },
+        };
+        Assert.False(
+            StreamSyncPolicy.RemovesUnlistedVersions(
+                StreamSyncPolicy.LookupFailed(answer, StreamSyncPolicy.SlowLookup)
+            )
+        );
+        Assert.True(
+            StreamSyncPolicy.RemovesUnlistedVersions(
+                StreamSyncPolicy.LookupFailed(
+                    answer,
+                    StreamSyncPolicy.SlowLookup - TimeSpan.FromMilliseconds(1)
+                )
+            )
+        );
+    }
+
+    [Fact]
     public void A_partial_answer_with_an_addon_error_counts_as_failed_and_keeps_them()
     {
         // One addon answered, the other timed out: what an outage at one store looked like.

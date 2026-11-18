@@ -20,7 +20,7 @@ data folder). The run refuses to start if the port is in use.
 | `delete` | A deleted film comes back on the next import with the viewer's watch state; the other film's is untouched |
 | `streams` | A slow add-on (3 s) and a title with zero streams don't break an import |
 | `failedlookup` | Play on a film whose add-ons all failed (errors listed, or errors hidden and a slow empty answer) asks again a minute later and finds the streams; a film the add-on really has no streams for is remembered |
-| `partiallookup` | A film with two versions keeps both when every add-on times out and when one does; a full answer without one removes it |
+| `partiallookup` | A film with two versions keeps both when every add-on times out and when one does, and when an answer without one lists no error but takes 3 s or more (it may be partial); the same answer served fast removes it |
 | `onepiece` | An IMDb id change keeps one series, its episodes and watch state |
 | `sharedepisodes` | Two entries claiming the same episodes don't move them back and forth |
 | `comeback` | An Ended series that comes back gets its new season |
