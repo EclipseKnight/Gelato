@@ -561,6 +561,57 @@ def sc_failedlookup(jf, addon, c):
         addon.delays.clear()
 
 
+def sc_partiallookup(jf, addon, c):
+    """Versions a failed lookup (an error entry, or an answer that took 3 s or more) left out stay until a lookup that didn't fail."""
+    stage = os.path.join(jf.work, "partiallookup-stage")
+    shutil.copytree(os.path.join(FIXTURES, "partiallookup"), stage, dirs_exist_ok=True)
+    addon.stage = stage
+    film = "tt0000951"
+    # Every Play below is due for a lookup again after a few seconds, not an hour.
+    set_config(jf, StreamTTL=5, NoStreamsTTL=5)
+    import_all(jf)
+    movies = jf.items("Movie")
+    c.eq("film imported", [m["Name"] for m in movies], ["Partial Answer Film"])
+    if len(movies) != 1:
+        return
+    film_id = movies[0]["Id"]
+
+    def answer(name):
+        shutil.copy(os.path.join(stage, "answers", name), os.path.join(stage, "stream", "movie", f"{film}.json"))
+
+    def lookups():
+        return len([r for r in addon.requests if r.startswith(f"stream/movie/{film}")])
+
+    def play():
+        """Play after the last lookup's mark ran out: the lookup it makes, and the versions after it."""
+        time.sleep(6)
+        before = lookups()
+        jf.call("POST", f"/Items/{film_id}/PlaybackInfo?userId={jf.admin}", {})
+        # Read while that lookup's mark holds, so the read only lists the rows there are.
+        item = jf.call("GET", f"/Items/{film_id}?userId={jf.admin}")
+        return lookups() - before, sorted(ms.get("Name") or "" for ms in item.get("MediaSources") or [])
+
+    c.eq("first Play: one lookup, both versions", play(), (1, ["Stream A", "Stream B"]))
+    answer("outage.json")
+    c.eq("every add-on timed out: both versions kept", play(), (1, ["Stream A", "Stream B"]))
+    answer("partial.json")
+    c.eq("add-on B timed out: its version kept", play(), (1, ["Stream A", "Stream B"]))
+    c.true("both logged as failed lookups",
+           len([l for l in jf.all_log() if f'"{film}"' in l and "lookupFailed=True" in l]) == 2)
+    # The same answer without B, no error entries in it: served slowly (3 s or more) it may be
+    # partial because an add-on timed out, so B stays; served fast it is complete, so B goes.
+    answer("a-only.json")
+    addon.delays[f"stream/movie/{film}"] = 4.0
+    try:
+        c.eq("a slow answer without B and without errors: B's version kept", play(), (1, ["Stream A", "Stream B"]))
+    finally:
+        addon.delays.clear()
+    c.true("the slow answer logged as a failed lookup",
+           len([l for l in jf.all_log() if f'"{film}"' in l and "lookupFailed=True" in l]) == 3)
+    c.eq("a fast full answer without B: B's version goes", play(), (1, ["Stream A"]))
+    repeat_check(jf, c)
+
+
 def sc_reattach(jf, addon, c):
     """The item already has a newer row for a key that also waits on the placeholder."""
     addon.stage = os.path.join(FIXTURES, "reattach")
@@ -803,6 +854,7 @@ SCENARIOS = {
     "delete": sc_delete,
     "streams": sc_streams,
     "failedlookup": sc_failedlookup,
+    "partiallookup": sc_partiallookup,
     "onepiece": sc_onepiece,
     "sharedepisodes": sc_sharedepisodes,
     "comeback": sc_comeback,

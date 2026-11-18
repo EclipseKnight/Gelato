@@ -1,0 +1,9 @@
+{
+ "streams": [
+  {
+   "name": "Stream A",
+   "title": "A 1080p",
+   "url": "http://127.0.0.1:9/a.mkv"
+  }
+ ]
+}
